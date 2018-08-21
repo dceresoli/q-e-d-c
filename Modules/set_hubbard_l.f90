@@ -48,9 +48,13 @@ FUNCTION set_hubbard_l( psd ) RESULT( hubbard_l )
        !
      CASE('Ge','As','Br','Sb','I','Tl','Pb','Bi','Po','At')
         !
+<<<<<<< HEAD
         hubbard_l =  1
        !
      CASE('Ga', 'In','Y')
+=======
+     CASE( 'Ga', 'In' )
+>>>>>>> gitlab/master
         !
         hubbard_l =  2
         !

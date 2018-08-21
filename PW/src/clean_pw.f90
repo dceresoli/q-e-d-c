@@ -66,6 +66,7 @@ SUBROUTINE clean_pw( lflag )
   !
   USE control_flags,        ONLY : ts_vdw
   USE tsvdw_module,         ONLY : tsvdw_finalize
+  USE dftd3_qe,             ONLY : dftd3_clean
   !
   IMPLICIT NONE
   !
@@ -95,6 +96,7 @@ SUBROUTINE clean_pw( lflag )
      !
      CALL dealloca_london()
      CALL cleanup_xdm()
+     CALL dftd3_clean()
      CALL deallocate_constraint()
      CALL deallocate_tetra ( )
      !
@@ -210,7 +212,7 @@ SUBROUTINE clean_pw( lflag )
   !
   IF (ts_vdw) CALL tsvdw_finalize()
   !
-  CALL plugin_clean( lflag )
+  CALL plugin_clean( 'PW', lflag )
   !
   RETURN
   !

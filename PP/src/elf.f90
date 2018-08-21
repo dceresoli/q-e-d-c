@@ -38,8 +38,8 @@ SUBROUTINE do_elf (elf)
   USE wvfct, ONLY: nbnd, wg
   USE control_flags, ONLY: gamma_only
   USE wavefunctions_module,  ONLY: evc
-  USE mp_global,            ONLY: inter_pool_comm, intra_pool_comm
-  USE mp,                   ONLY: mp_sum
+  USE mp_pools, ONLY: inter_pool_comm, intra_pool_comm
+  USE mp, ONLY: mp_sum
   !
   ! I/O variables
   !
@@ -114,7 +114,7 @@ SUBROUTINE do_elf (elf)
      CALL sym_rho_init ( gamma_only )
      !
      aux(:) =  cmplx ( kkin (:), 0.0_dp, kind=dp)
-     CALL fwfft ('Rho', aux, dffts)
+     CALL fwfft ('Rho', aux, dfftp)
      ALLOCATE (aux2(ngm))
      aux2(:) = aux(dfftp%nl(:))
      !
@@ -157,7 +157,7 @@ SUBROUTINE do_elf (elf)
         ENDDO
      ENDIF
 
-     CALL invfft ('Rho', aux2, dffts)
+     CALL invfft ('Rho', aux2, dfftp)
      DO i = 1, dfftp%nnr
         tbos (i) = tbos (i) + dble(aux2(i))**2
      ENDDO
@@ -175,10 +175,8 @@ SUBROUTINE do_elf (elf)
   ENDDO
   DEALLOCATE (aux, aux2, tbos, kkin)
   RETURN
+
 END SUBROUTINE do_elf
-
-
-
 !-----------------------------------------------------------------------
 SUBROUTINE do_rdg (rdg)
   !-----------------------------------------------------------------------
@@ -210,7 +208,7 @@ SUBROUTINE do_rdg (rdg)
   ENDDO
 
   ! gradient of rho
-  CALL gradrho(dfftp%nnr, rho%of_g(1,1), ngm, g, dfftp%nl, grho)
+  CALL fft_gradient_g2r(dfftp, rho%of_g(1,1), g, grho)
 
   ! calculate rdg
   DO i = 1, dfftp%nnr
@@ -262,7 +260,7 @@ SUBROUTINE do_sl2rho (sl2rho)
   ENDDO
 
   ! calculate hessian of rho (gradient is discarded)
-  CALL hessian( dfftp%nnr, rho%of_r(:,1), ngm, g, dfftp%nl, grho, hrho )
+  CALL fft_hessian( dfftp, rho%of_r(:,1), g, grho, hrho )
 
   ! find eigenvalues of the hessian
   DO i = 1, dfftp%nnr

@@ -70,7 +70,7 @@
 #else
       USE io_base,            ONLY: read_rhog
 #endif      
-      USE io_files,           ONLY: tmp_dir, prefix
+      USE io_files,           ONLY: tmp_dir, prefix, postfix
       USE fft_rho
       USE fft_helper_subroutines, ONLY: c2psi_gamma
       !
@@ -191,8 +191,8 @@
             CALL read_rho( dirname, rhor, nspin )
 #else
             CALL errore('rhoofr','option trhor unverified, please report',1)
-            WRITE(dirname,'(A,A,"_",I2,".save/")') &
-                 TRIM(tmp_dir), TRIM(prefix), ndr
+            WRITE(dirname,'(A,A,"_",I2,A)') &
+                 TRIM(tmp_dir), TRIM(prefix), ndr,postfix
             CALL read_rhog ( dirname, root_bgrp, intra_bgrp_comm, &
                  ig_l2g, nspin, rhog )
             CALL rho_g2r ( dfftp, rhog, rhor )
@@ -452,85 +452,6 @@
 !-----------------------------------------------------------------------
    END SUBROUTINE rhoofr_cp
 !-----------------------------------------------------------------------
-
-
-
-!=----------------------------------------------------------------------=!
-   SUBROUTINE fillgrad_x( nspin, rhog, gradr )
-!=----------------------------------------------------------------------=!
-
-      !
-      !     calculates gradient of charge density for gradient corrections
-      !     in: charge density on G-space    out: gradient in R-space
-      !
-      USE kinds,              ONLY: DP
-      use gvect,              ONLY: g
-      use cell_base,          ONLY: tpiba
-      USE fft_interfaces,     ONLY: invfft
-      USE fft_base,           ONLY: dfftp
-      USE fft_helper_subroutines, ONLY: fftx_oned2threed
-!
-      implicit none
-! input
-      integer, intent(in) :: nspin
-      complex(DP) :: rhog( dfftp%ngm, nspin )
-! output
-      real(DP) ::    gradr( dfftp%nnr, 3, nspin )
-! local
-#if defined(__INTEL_COMPILER)
-#if __INTEL_COMPILER  >= 1300
-!dir$ attributes align: 4096 :: v
-#endif
-#endif
-      complex(DP), allocatable :: v(:)
-      complex(DP), allocatable :: drho(:,:)
-      complex(DP) :: ci
-      integer     :: iss, ig, ir
-!
-!
-      allocate( v( dfftp%nnr ) ) 
-      allocate( drho( dfftp%ngm, 3 ) ) 
-      !
-      ci = ( 0.0d0, 1.0d0 )
-      do iss = 1, nspin
-
-!$omp parallel default(shared), private(ig)
-!$omp do
-         do ig=1,dfftp%ngm
-            drho(ig,1) = ci*tpiba*g(1,ig)*rhog(ig,iss)
-            drho(ig,2) = ci*tpiba*g(2,ig)*rhog(ig,iss)
-            drho(ig,3) = ci*tpiba*g(3,ig)*rhog(ig,iss)
-         end do
-!$omp end parallel
-         CALL fftx_oned2threed( dfftp, v, drho(:,1) )
-         !
-         call invfft( 'Rho', v, dfftp )
-         !
-!$omp parallel default(shared), private(ig,ir)
-!$omp do
-         do ir=1,dfftp%nnr
-            gradr(ir,1,iss)=DBLE(v(ir))
-         end do
-!$omp end parallel
-
-         CALL fftx_oned2threed( dfftp, v, drho(:,2), drho(:,3) )
-         !
-         call invfft( 'Rho', v, dfftp )
-         !
-!$omp parallel do default(shared)
-         do ir=1,dfftp%nnr
-            gradr(ir,2,iss)= DBLE(v(ir))
-            gradr(ir,3,iss)=AIMAG(v(ir))
-         end do
-      end do
-      !
-      deallocate( drho )
-      deallocate( v )
-!
-      RETURN
-    END SUBROUTINE fillgrad_x
-
-
 !
 !----------------------------------------------------------------------
    SUBROUTINE checkrho_x(nnr,nspin,rhor,rmin,rmax,rsum,rnegsum)

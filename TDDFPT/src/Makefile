@@ -13,7 +13,7 @@ MODFLAGS= $(BASEMOD_FLAGS) \
           $(MOD_FLAG)../../LR_Modules
 
 QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a ../../KS_Solvers/Davidson/libdavid.a ../../KS_Solvers/CG/libcg.a \
-         ../../LAXlib/libqela.a ../../UtilXlib/libutil.a
+         ../../LAXlib/libqela.a ../../UtilXlib/libutil.a ../../dft-d3/libdftd3qe.a
 PWOBJS = ../../PW/src/libpw.a
 LRMODS = ../../LR_Modules/liblrmod.a
 
@@ -59,9 +59,10 @@ lr_dav_variables.o\
 lr_dav_routines.o\
 lr_us.o\
 lr_test_restart.o\
-lr_dav_debug.o
+lr_dav_debug.o\
+plugin_tddfpt_potential.o
 
-TLDEPS=bindir libs pw-lib libfft libla lrmods
+TLDEPS=bindir libs mods lrmods
 
 all : tldeps libtddfpt.a turbo_lanczos.x turbo_davidson.x turbo_eels.x
 

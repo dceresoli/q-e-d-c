@@ -72,6 +72,8 @@ esm.o \
 ewald.o \
 ewald_dipole.o \
 extfield.o \
+exx_base.o \
+exx_band.o \
 exx.o \
 fcp.o \
 find_group.o \
@@ -148,6 +150,7 @@ plugin_init_cell.o \
 plugin_init_potential.o \
 plugin_initbase.o \
 plugin_clean.o \
+plugin_check.o \
 plugin_clock.o \
 plugin_summary.o \
 plugin_initialization.o \

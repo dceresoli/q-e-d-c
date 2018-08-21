@@ -232,7 +232,10 @@ SUBROUTINE electrons()
         ! there is some numerical problem. One such cause could be that
         ! the treatment of the divergence in exact exchange has failed. 
         ! FIXME: to be properly implemented for all cases
-        IF (use_ace .AND. (nspin == 1) .AND. gamma_only) THEN
+        !
+!civn 
+!       IF (use_ace .AND. (nspin == 1) .AND. gamma_only) THEN
+        IF ( DoLoc ) THEN
           dexx =  0.5D0 * ((fock1-fock0)+(fock3-fock2)) 
         ELSE
           dexx = fock1 - 0.5D0*(fock0+fock2)
@@ -720,7 +723,7 @@ SUBROUTINE electrons_scf ( printout, exxen )
      !
      CALL plugin_scf_energy(plugin_etot,rhoin)
      !
-     CALL plugin_scf_potential(rhoin,conv_elec,dr2)
+     CALL plugin_scf_potential(rhoin,conv_elec,dr2,vltot)
      !
      ! ... define the total local potential (external + scf)
      !
