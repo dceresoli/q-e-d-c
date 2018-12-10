@@ -46,6 +46,7 @@ subroutine test_bessel ( )
   !
   !  we redo everything for each cutoff: not really a smart implementation
   !
+  LMAX = 3
   do nc = 1, ncut
      !
      ecut = ecutmin + (nc-1) * decut
@@ -189,7 +190,7 @@ subroutine h_diag  ( mesh_, nswx, nsw, lmax, q )
   use kinds, only : dp
   use ld1inc, only: lmx, grid
   use ld1inc, only: nbeta, betas, qq, ddd, vpstot, vnl, lls, jjs, &
-       nspin, rel, pseudotype
+       nspin, rel, pseudotype, bmat
   implicit none
   !
   ! input
@@ -206,14 +207,18 @@ subroutine h_diag  ( mesh_, nswx, nsw, lmax, q )
   real(kind=dp), external :: int_0_inf_dr
   real(kind=dp) :: j
   character(len=2), dimension (2) :: spin = (/ 'up', 'dw' /)
-  integer :: n_states = 3, l, n, m, nb, mb, ind, is, nj
+  integer :: n_states = 4, l, n, m, nb, mb, ind, is, nj
+  real(dp), allocatable :: phi(:,:)
+  integer :: i, k
   !
   !
+print*, 'pseudotype=', pseudotype
+print*, 'nbeta=', nbeta
   allocate ( h (nswx, nswx), s0(nswx), chi (nswx, n_states), enl(nswx) )
   allocate ( jlq ( mesh_, nswx ), work (mesh_), vaux (mesh_) )
   if ( pseudotype > 2 ) allocate ( s(nswx, nswx) )
   !
-  write(stdout,"( 20x,3(7x,'N = ',i1) )" ) (n, n=1,n_states)
+  write(stdout,"( 20x,4(7x,'N = ',i1) )" ) (n, n=1,n_states)
   !
   do l=0,lmax
      !
@@ -259,6 +264,7 @@ subroutine h_diag  ( mesh_, nswx, nsw, lmax, q )
            endif
            !
            h (:,:) = 0.0_dp
+           betajl(:,:) = 0.d0
            !
            do n = 1, nsw(l)
               !
@@ -300,6 +306,7 @@ subroutine h_diag  ( mesh_, nswx, nsw, lmax, q )
                        if ( lls (nb) == l .and. abs(jjs (nb) - j) < 0.001_8 ) then
                           betajl_ (:, mb) = betajl_ (:, mb) + &
                                ddd (mb,nb,is) * betajl (:, nb)
+print*, mb, nb, ddd(mb,nb,is)
                        end if
                     end do
                  end if
@@ -309,11 +316,13 @@ subroutine h_diag  ( mesh_, nswx, nsw, lmax, q )
               !
               do n = 1, nsw(l)
                  do m = 1, n
+if (n<3 .and. m<3) print*, 'BEFORE:', m,n,h(m,n)
                     do nb = 1, nbeta
                        if ( lls (nb) == l .and. abs(jjs (nb) - j) < 0.001_8 ) then
                           h(m,n) = h(m,n) + betajl_ (m, nb) * betajl (n, nb)
                        end if
                     end do
+if (n<3 .and. m<3) print*, 'AFTER :', m,n,h(m,n)
                  end do
               end do
               !
@@ -375,10 +384,26 @@ subroutine h_diag  ( mesh_, nswx, nsw, lmax, q )
                   "( 5x,'E(L=',i1,') =',5x,4(f10.4,' Ry') )" ) &
                    l, (enl(n), n=1,n_states)
            end if
-        end do
+
+           !<CERES>
+           allocate(phi(grid%mesh, n_states))
+           phi = 0.d0
+           do i = 1, n_states
+             do k = 1, nsw(l)
+               phi(1:mesh_,i) = phi(1:mesh_,i) + chi(k,i)*jlq(1:mesh_,k)/s0(k)
+             enddo
+           enddo
+           do k = 1, grid%mesh
+              write(80+l,'(5E14.6)') grid%r(k), (grid%r(k)*phi(k,i), i=1,n_states) 
+           enddo
+           deallocate(phi)
+           !</CERES>
+          end do
+
+        end do  ! j
         !
-     end do
-  end do
+     end do  ! ispin
+
   !
   if ( pseudotype > 2 ) deallocate ( s )
   deallocate ( vaux, work, jlq )
@@ -445,6 +470,7 @@ SUBROUTINE rdiags( n, h, s, ldh, m, e, v, ldv )
   real(kind=dp), intent (inout) :: &
        h(ldh,n), & ! matrix to be diagonalized, UPPER triangle
        s(ldh,n)    ! overlap matrix - both destroyed on output
+  real(dp) :: copy_of_s(ldh,n)
   !
   real(kind=dp), intent (out) :: e(m), v(ldv,m) ! eigenvalues and eigenvectors 
   !
@@ -457,10 +483,14 @@ SUBROUTINE rdiags( n, h, s, ldh, m, e, v, ldv )
   lwork = 8 * n
   allocate ( work (lwork), iwork(5*n), ifail(n) )
   v (:,:) = 0.0_dp
+  copy_of_s = s
+  print*, 'BEFORE:'
+  write(*,'(3(3(F10.4,2X),/))') s(1:3,1:3)
   !
   CALL DSYGVX( 1, 'V', 'I', 'U', n, h, ldh, s, ldh, &
        0.0_dp, 0.0_dp, 1, m, 0.0_dp, mo, e, v, ldh, work, lwork, &
        iwork, ifail, info )
+
   !             
   if ( info > n) then
      call errore('rdiags','failed to converge (factorization)',info-n)
@@ -469,7 +499,15 @@ SUBROUTINE rdiags( n, h, s, ldh, m, e, v, ldv )
   else if(info < 0) then
      call errore('rdiags','illegal arguments',-info)
   end if
-  deallocate ( ifail, iwork, work )  
+  deallocate ( ifail, iwork, work )
+
+  !<CERES>
+  s = copy_of_s
+  call dpotrf('L', n, s, ldh, info)
+  v(1:n,1:m) = matmul(transpose(s(1:n,1:n)), v(1:n,1:m))
+  print*, 'AFTER:'
+  write(*,'(3(3(F10.4,2X),/))') s(1:3,1:3)
+  !</CERES>
   !
   return
   !

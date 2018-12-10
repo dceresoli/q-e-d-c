@@ -261,7 +261,11 @@ MODULE ld1inc
        enzero(2)
   real(DP) ::  &
        tau(ndmx,2),   & ! kinetic energy density for metaGGA
+       taus(ndmx,2),  & ! pseudo kinetic energy density for metaGGA
        vtau(ndmx)       ! potential for metaGGA
+  real(DP) ::  &
+       aectau(ndmx),    & ! true, not smoothened, AE core tau
+       aevtau(ndmx,2)     ! the all-electron valence tau
   real(DP), ALLOCATABLE ::  &
        vsic(:,:), vsicnew(:), vhn1(:), egc(:) ! potentials for SIC
   !
@@ -305,6 +309,7 @@ MODULE ld1inc
   !
   !  file names
   !
+  LOGICAL :: upf_v1_format     ! set to true to use version 1 of UPF file format
   CHARACTER(len=75)  :: title  ! the title of the run
   CHARACTER(len=75)  :: author ! the author of the pseudopotential
   CHARACTER(len=240) :: prefix ! prefix for file names
@@ -356,4 +361,8 @@ MODULE ld1inc
   REAL ( dp ) :: wfc_ps_recon(ndmx,nwfsx)
   REAL ( dp ) :: wfc_us_recon(ndmx,nwfsx)
   !
+  ! Potential shift
+  !
+  REAL ( dp ) :: vshift(0:lmx)
+
 END MODULE ld1inc

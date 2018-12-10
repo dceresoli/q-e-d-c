@@ -68,6 +68,7 @@ SUBROUTINE calculate_gipaw_orbitals
   REAL ( dp ) :: de
   REAL ( dp ), ALLOCATABLE :: f_ae(:), f_ps(:)
 
+  verbosity = 'high'
   IF ( verbosity == 'high' ) THEN
      WRITE ( stdout, '( 3A )' ) &
           "     ------------------------", &
@@ -94,7 +95,7 @@ SUBROUTINE calculate_gipaw_orbitals
         j = 0.0_dp
 
         DO n = 1, grid%mesh
-           IF ( grid%r(n) < 15.0 ) THEN
+           IF ( grid%r(n) < 20.0 ) THEN
               outer_r_radial_index = n
            ENDIF
         ENDDO
@@ -236,6 +237,7 @@ SUBROUTINE calculate_gipaw_orbitals
            rcut_match = min ( rcut_match, 5.0_dp )
         ENDIF
         ik = 10
+        rcut_match = max(1.d0, rcut_match)
         DO n = 1, grid%mesh
            IF ( grid%r(n) < rcut_match ) ik = n
         ENDDO
@@ -244,7 +246,7 @@ SUBROUTINE calculate_gipaw_orbitals
         ENDIF
 
         DO n = 1, grid%mesh
-           IF ( grid%r(n) < 15.0 ) THEN
+           IF ( grid%r(n) < 20.0 ) THEN
               outer_r_radial_index = n
            ENDIF
         ENDDO

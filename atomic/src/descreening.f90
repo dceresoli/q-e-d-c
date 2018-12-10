@@ -22,10 +22,11 @@ subroutine descreening
   use radial_grids, only: ndmx
   use ld1_parameters, only: nwfsx
   use ld1inc, only: grid, nlcc, vxt, lsd, vpstot, vpsloc, file_screen, &
-                    vh, enne, rhoc, latt, rhos, enl, &
+                    vh, enne, rhoc, latt, rhos, taus, enl, &
                     nbeta, bmat, qvan, qvanl, jjs, lls, ikk, pseudotype, &
                     nwfts, enlts, octs, llts, jjts, phits, nstoaets, lpaw, &
-                    which_augfun
+                    which_augfun, lloc
+  use ld1inc, only: prefix, lmax, vnl
   implicit none
 
   integer ::  &
@@ -44,6 +45,31 @@ subroutine descreening
 
   integer  :: &
        n, nst, iwork(nwfsx), ios, nerr
+
+  integer :: l
+  real(dp) :: dummyr, dummy(0:2)
+
+#if 0
+  !<ceres>
+  open(unit=19,file=trim(prefix)//'.scr', status='unknown')
+  do n=1,grid%mesh
+     write(19,'(5e18.8)') grid%r(n),((vnl(n,l,1)+vpsloc(n)),l=0,lmax)
+  end do
+  close(19)
+  !</ceres>
+
+  !<ceres>
+  open(unit=19,file='LocPot.dat',status='old',iostat=ios)
+  if (ios == 0) then
+     do n=1,grid%mesh
+        read(19,*), dummyr, dummy(0:2)
+        vpsloc(n) = dummy(lloc)
+     end do
+     close(19)
+  endif
+  !</ceres>
+#endif
+ 
   !
   !     descreening the local potential: NB: this descreening is done with
   !     the occupation of the test configuration. This is required
@@ -91,15 +117,23 @@ subroutine descreening
   !    descreening the local pseudopotential
   !
   iwork=1
-  call chargeps(rhos,phits,nwfts,llts,jjts,octs,iwork)
+  call chargeps(rhos,taus,phits,nwfts,llts,jjts,octs,iwork)
 
   call new_potential(ndmx,grid%mesh,grid,0.0_dp,vxt,lsd,nlcc,latt,enne,&
-       rhoc,rhos,vh,vaux,1)
+       rhoc,rhos,taus,vh,vaux,1)
 
   do n=1,grid%mesh
      vpstot(n,1)=vpsloc(n)
      vpsloc(n)=vpsloc(n)-vaux(n,1)
   enddo
+
+#if 0
+  !<ceres>
+  open(unit=19,file='LocPotUnScr.dat',status='unknown')
+  write(19,'(4es18.10)') vpsloc(1:grid%mesh)
+  close(19)
+  !</ceres>
+#endif
 
   if (file_screen .ne.' ') then
      if (ionode) &

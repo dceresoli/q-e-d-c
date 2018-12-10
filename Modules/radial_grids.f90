@@ -235,7 +235,7 @@ END TYPE radial_grid_type
          call errore('check_mesh',' r2(i) is different ',i)
       if (abs(grid%sqr(i)/sqrt(grid%r(i))-1.d0) > eps8 ) &
          call errore('check_mesh',' sqr(i) is different ',i)
-      if (abs(grid%rab(i)/(grid%r(i)*grid%dx)-1.d0) > eps8 ) &
+      if (abs(grid%rab(i)/(grid%r(i)*grid%dx)-1.d0) > 1d-4 ) &
          call errore('check_mesh',' rab(i) is different ',i)
    end do
 

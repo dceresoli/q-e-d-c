@@ -30,6 +30,7 @@ SUBROUTINE export_upf(filename, unit_loc)
   !
   use pseudo_types
   use write_upf_module, only: write_upf
+  use io_global, only: stdout
   !
   implicit none
   !
@@ -46,6 +47,14 @@ SUBROUTINE export_upf(filename, unit_loc)
   TYPE (radial_grid_type),TARGET :: internal_grid
   CHARACTER(len=2), external     :: atom_name
   CHARACTER(len=9) :: day, hour
+
+  !<CERES>
+  integer :: i, lam, nst, loc(1)
+  real(dp), allocatable :: f_ps(:)
+  real(dp) :: norm
+  real(dp), external :: int_0_inf_dr
+  real(dp), parameter :: smooth = 1.0d0
+  !</CERES>
 
   call date_and_tim(day,hour)
   !
@@ -252,7 +261,26 @@ SUBROUTINE export_upf(filename, unit_loc)
   upf%rho_at (1:grid%mesh) = rhos (1:grid%mesh,1)
   !
   allocate(upf%chi(upf%mesh,upf%nwfc))
-  upf%chi(1:grid%mesh,1:upf%nwfc) = phits(1:grid%mesh,1:upf%nwfc)
+
+  !<CERES>
+  !!!upf%chi(1:grid%mesh,1:upf%nwfc) = phits(1:grid%mesh,1:upf%nwfc)
+  if (lgipaw_reconstruction) then
+      write(stdout,'(5X,''***** Overwriting PHIs with GIPAW PS orbitals *****'')')
+      allocate(f_ps(grid%mesh))
+      do i = 1, upf%nwfc
+          loc = maxloc(abs(wfc_ps_recon(:,i)))
+          if (wfc_ps_recon(loc(1),i) < 0.d0) wfc_ps_recon(:,i) = -wfc_ps_recon(:,i)
+          !wfc_ps_recon(:,i) = wfc_ps_recon(:,i) * smooth*atan((60.d0-grid%r(:))/smooth)
+          f_ps = wfc_ps_recon(1:grid%mesh, i)**2
+          lam = llts(i)
+          nst = (lam+1)*2
+          norm = int_0_inf_dr(f_ps, grid, grid%mesh, nst)
+          upf%chi(1:grid%mesh,i) = wfc_ps_recon(1:grid%mesh,i) / sqrt(norm)
+      enddo
+      deallocate(f_ps)
+  endif
+  !</CERES>
+
   !
   allocate(upf%vloc(upf%mesh))
   upf%vloc(1:grid%mesh) = vpsloc(1:grid%mesh)

@@ -127,7 +127,7 @@ finish(nwf)=len
 do n=nwfc+1,nwf
    prev = config(start(n):start(n))
    read(prev,*) nn(n)
-   if (nn(n) <= 0 .or. nn(n) > 7) &
+   if (nn(n) <= 0 .or. nn(n) > 10) &
   &    call errore('el_config','wrong main quantum number',n)
 
    curr = capital(config(start(n)+1:start(n)+1))

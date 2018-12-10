@@ -51,7 +51,7 @@ subroutine newd_at ( )
            endif
         enddo
      enddo
-  else if (pseudotype == 2) then
+  else if (pseudotype <= 2) then
      !
      !    non-US separable PP case: just copy unscreened D coeffs
      !
