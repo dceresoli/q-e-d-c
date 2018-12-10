@@ -471,6 +471,10 @@ ewald_dipole.o : ../../Modules/recvec.o
 ewald_dipole.o : ../../UtilXlib/mp.o
 ewald_dipole.o : pwcom.o
 extfield.o : ../../Modules/kind.o
+extpot.o : ../../FFTXlib/scatter_mod.o
+extpot.o : ../../Modules/fft_base.o
+extpot.o : ../../Modules/io_global.o
+extpot.o : ../../Modules/kind.o
 exx.o : ../../FFTXlib/fft_interfaces.o
 exx.o : ../../FFTXlib/fft_types.o
 exx.o : ../../FFTXlib/scatter_mod.o
@@ -988,6 +992,7 @@ input.o : bp_mod.o
 input.o : dynamics_module.o
 input.o : esm.o
 input.o : extfield.o
+input.o : extpot.o
 input.o : exx.o
 input.o : exx_base.o
 input.o : ldaU.o
@@ -1788,6 +1793,7 @@ setlocal.o : ../../UtilXlib/mp.o
 setlocal.o : Coul_cut_2D.o
 setlocal.o : esm.o
 setlocal.o : extfield.o
+setlocal.o : extpot.o
 setlocal.o : martyna_tuckerman.o
 setlocal.o : pwcom.o
 setlocal.o : scf_mod.o

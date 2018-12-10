@@ -145,6 +145,7 @@ esic.o : ../../Modules/radial_grids.o
 esic.o : ld1inc.o
 export_upf.o : ../../Modules/constants.o
 export_upf.o : ../../Modules/funct.o
+export_upf.o : ../../Modules/io_global.o
 export_upf.o : ../../Modules/kind.o
 export_upf.o : ../../Modules/pseudo_types.o
 export_upf.o : ../../Modules/radial_grids.o

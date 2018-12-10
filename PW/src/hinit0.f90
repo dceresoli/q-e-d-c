@@ -83,6 +83,7 @@ SUBROUTINE hinit0()
   !
   ! ... calculate the total local potential
   !
+  call read_extpot()
   CALL setlocal()
   !
   ! ... calculate the core charge (if any) for the nonlinear core correction
