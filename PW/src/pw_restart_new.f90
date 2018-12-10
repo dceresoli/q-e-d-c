@@ -39,7 +39,6 @@ MODULE pw_restart_new
        pw_readschema_file, init_vars_from_schema, read_collected_to_evc
   !
   CONTAINS
-#if !defined(__OLDXML)
     !------------------------------------------------------------------------
     SUBROUTINE pw_write_schema( )
       !------------------------------------------------------------------------
@@ -61,7 +60,7 @@ MODULE pw_restart_new
       USE noncollin_module,     ONLY : noncolin, npol
       USE io_files,             ONLY : nwordwfc, iunwfc, psfile
       USE buffers,              ONLY : get_buffer
-      USE wavefunctions_module, ONLY : evc
+      USE wavefunctions, ONLY : evc
       USE klist,                ONLY : nks, nkstot, xk, ngk, wk, &
                                        lgauss, ngauss, smearing, degauss, nelec, &
                                        two_fermi_energies, nelup, neldw, tot_charge
@@ -523,7 +522,7 @@ MODULE pw_restart_new
       USE noncollin_module,     ONLY : noncolin, npol
 
       USE buffers,              ONLY : get_buffer
-      USE wavefunctions_module, ONLY : evc
+      USE wavefunctions, ONLY : evc
       USE klist,                ONLY : nks, nkstot, xk, ngk, igk_k, wk
       USE gvect,                ONLY : ngm, ngm_g, g, mill
       USE fft_base,             ONLY : dfftp
@@ -1965,7 +1964,7 @@ MODULE pw_restart_new
       USE lsda_mod,             ONLY : nspin, isk
       USE klist,                ONLY : nkstot, wk, nks, xk, ngk, igk_k
       USE wvfct,                ONLY : npwx, g2kin, et, wg, nbnd
-      USE wavefunctions_module, ONLY : evc
+      USE wavefunctions, ONLY : evc
       USE io_files,             ONLY : nwordwfc, iunwfc
       USE buffers,              ONLY : save_buffer
       USE gvect,                ONLY : ig_l2g
@@ -2139,60 +2138,5 @@ MODULE pw_restart_new
       CALL start_exx() 
     END SUBROUTINE  readschema_exx 
     !-----------------------------------------------------------------------------------  
-#else
-    SUBROUTINE pw_write_schema()
-       IMPLICIT NONE
-       CONTINUE
-    END SUBROUTINE pw_write_schema
-    ! 
-    SUBROUTINE pw_write_binaries()
-      IMPLICIT NONE
-      CONTINUE
-    END SUBROUTINE pw_write_binaries
-    !    
-    SUBROUTINE pw_readschema_file(ierr, restart_output, restart_input, &
-         restart_parallel_info, restart_general_info)
-      !------------------------------------------------------------------------
-      IMPLICIT NONE 
-      ! 
-      INTEGER                                          :: ierr
-      TYPE( output_type ),OPTIONAL,      INTENT(OUT)   :: restart_output
-      TYPE(input_type),OPTIONAL,         INTENT(OUT)   :: restart_input
-      TYPE(parallel_info_type),OPTIONAL, INTENT(OUT)   :: restart_parallel_info
-      TYPE(general_info_type ),OPTIONAL, INTENT(OUT)   :: restart_general_info
-      ! 
-      CONTINUE
-    END SUBROUTINE pw_readschema_file
-    !
-    SUBROUTINE read_collected_to_evc( dirname )
-      !------------------------------------------------------------------------
-      !
-      ! ... This routines reads wavefunctions from the new file format and
-      ! ... writes them into the old format
-      !
-      IMPLICIT NONE
-      !
-      CHARACTER(LEN=*), INTENT(IN)  :: dirname
-      !
-      CONTINUE 
-   END SUBROUTINE read_collected_to_evc
-   !
-   SUBROUTINE init_vars_from_schema( what, ierr, output_obj, par_info, gen_info, input_obj )
-      !------------------------------------------------------------------------
-      !
-      USE qes_types_module,     ONLY : input_type, output_type, &
-                                       general_info_type, parallel_info_type    
-!      !
-      IMPLICIT NONE
-!      !
-      CHARACTER(LEN=*), INTENT(IN)           :: what
-      TYPE ( output_type), INTENT(IN)        :: output_obj
-      TYPE ( parallel_info_type), INTENT(IN) :: par_info
-      TYPE ( general_info_type ), INTENT(IN) :: gen_info
-      INTEGER,INTENT (OUT)                   :: ierr 
-      TYPE ( input_type ), OPTIONAL, INTENT(IN)        :: input_obj
-      !
-      CONTINUE
-    END SUBROUTINE init_vars_from_schema
-#endif
+
   END MODULE pw_restart_new

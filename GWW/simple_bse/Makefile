@@ -2,12 +2,8 @@
 #
 include ../../make.inc
 
-# location of include files
-IFLAGS=
-
 # location of needed modules
 MODFLAGS= $(BASEMOD_FLAGS) \
-	$(MOD_FLAG)../../KS_Solvers/CG $(MOD_FLAG)../../KS_Solvers/Davidson \
 	$(MOD_FLAG)../../GWW/gww 
 
 #location of needed libraries
@@ -33,7 +29,8 @@ build_eemat.o
 #QEMODS = ../../Modules/libqemod.a   ../../FFTXlib/libqefft.a ../../LAXlib/libqela.a \
 	 ../../LAXlib/libqela.a ../../UtilXlib/libutil.a
 QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a \
-	../../KS_Solvers/CG/libcg.a ../../KS_Solvers/Davidson/libdavid.a ../../LAXlib/libqela.a ../../UtilXlib/libutil.a
+	../../KS_Solvers/libks_solvers.a \
+        ../../LAXlib/libqela.a ../../UtilXlib/libutil.a
 
 TLDEPS=bindir mods libs libiotk 
 
@@ -41,7 +38,7 @@ all : tldeps simple_bse.x  libsimple_exc.a
 
 simple_bse.x : simple_bse.o $(EXCOBJS) $(LIBOBJS) $(QEMODS)  
 	$(MPIF90) $(LDFLAGS) -o $@ \
-		simple_bse.o $(EXCOBJS) $(QEMODS) $(LIBOBJS)  $(LIBS)
+		simple_bse.o $(EXCOBJS) $(QEMODS) $(LIBOBJS)  $(QELIBS)
 	- ( cd ../../bin; ln -fs ../GWW/simple_bse/$@ . )
 
 

@@ -2,8 +2,6 @@
 
 include ../../make.inc
 LIBMIN = ../minpack/minpacklib.a
-# location of include files
-IFLAGS+=-I../../../include
 
 # location of needed modules
 MODFLAGS= $(BASEMOD_FLAGS) \
@@ -28,7 +26,8 @@ SIMPLEOBJS = \
   commutator.o 
 
 
-QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a ../../KS_Solvers/CG/libcg.a ../../KS_Solvers/Davidson/libdavid.a \
+QEMODS = ../../Modules/libqemod.a ../../FFTXlib/libqefft.a \
+        ../../KS_Solvers/libks_solvers.a \
 	../../LAXlib/libqela.a ../../UtilXlib/libutil.a
 
 PWOBJS = ../../PW/src/libpw.a
@@ -41,7 +40,7 @@ all : tldeps simple.x
 
 simple.x : simple.o libsimple.a  $(SIMPLEOBJS) $(PWOBJS) $(QEMODS) $(PW4GWWOBJS) $(GWWOBJ)
 	$(LD) $(LDFLAGS) -o $@ \
-		simple.o libsimple.a $(PWOBJS) $(PW4GWWOBJS) $(GWWOBJ) $(EEOBJS) $(QEMODS) $(LIBOBJS) $(LIBS) $(LIBMIN)
+		simple.o libsimple.a $(PWOBJS) $(PW4GWWOBJS) $(GWWOBJ) $(EEOBJS) $(QEMODS) $(LIBOBJS) $(QELIBS) $(LIBMIN)
 	- ( cd ../../bin ; ln -fs ../GWW/simple/$@ . )
 
 tldeps :

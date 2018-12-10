@@ -23,7 +23,7 @@ PROGRAM open_grid
   USE gvect,              ONLY : g, ngm
   USE funct,              ONLY : dft_force_hybrid
   USE wvfct,              ONLY : nbnd, npwx, g2kin, et, wg
-  USE wavefunctions_module, ONLY : evc
+  USE wavefunctions, ONLY : evc
   USE buffers,            ONLY : save_buffer, open_buffer, close_buffer
   USE scf,                ONLY : rho
   USE lsda_mod,           ONLY : nspin, lsda
@@ -215,13 +215,6 @@ PROGRAM open_grid
   calculation = 'bands'
   k_points = "automatic"
   CALL init_start_k(nk1,nk2,nk3, k1, k2, k3, "automatic",nks/nspin_mag, xk, wk)
-#if defined(__OLDXML)
-#else
-  !
-  ! HACK: rebuild input structure, this uses unallocated stuff
-  !print*, nk1, nk2, nk3, k1, k2, k3, k_points
-  !CALL pw_init_qexsd_input(qexsd_input_obj, obj_tagname="input")
-#endif
   !
   ! Restore EXX variables
   use_ace = use_ace_back
