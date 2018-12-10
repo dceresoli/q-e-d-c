@@ -541,7 +541,7 @@ SUBROUTINE run_wannier
   USE ions_base, ONLY : nat
   USE mp,        ONLY : mp_bcast
   USE mp_world,  ONLY : world_comm
-  USE cell_base, ONLY : celldm
+  USE cell_base, ONLY : alat
   USE io_files,  ONLY : prefix
   USE io_epw,    ONLY : QPeig_read
   USE pwcom,     ONLY : nkstot
@@ -624,7 +624,7 @@ SUBROUTINE run_wannier
   WRITE (stdout,*)
   ! RM - loop is up to n_wannier according to W90/wannierise.F90
   DO iw = 1, n_wannier
-     WRITE (stdout, '(5x,"(",3f10.5,") :  ",f8.5)') wann_centers(:,iw)/celldm(1)/bohr, wann_spreads(iw)
+     WRITE (stdout, '(5x,"(",3f10.5,") :  ",f8.5)') wann_centers(:,iw)/alat/bohr, wann_spreads(iw)
   ENDDO
   WRITE (stdout,*)
   !
@@ -748,7 +748,7 @@ SUBROUTINE compute_amn_para
     ik_g = nkq_abs
     !
     WRITE (stdout,'(5x,i8, " of ", i4,a)') ik , nks, ' on ionode'
-    CALL flush(6)
+    CALL flush(stdout)
     ! SP: Replaced by our wrapper to deal with parallel
     CALL readwfc(my_pool_id+1, ik, evc) 
     !
@@ -1197,7 +1197,7 @@ SUBROUTINE compute_mmn_para
      ik_g = nkq_abs
      !
      WRITE (stdout,'(5x,i8, " of ", i4,a)') ik , nks, ' on ionode'
-     CALL flush(6)
+     CALL flush(stdout)
      !
      ! read wfc at k
      CALL readwfc(my_pool_id+1, ik, evc)
@@ -1596,10 +1596,11 @@ SUBROUTINE write_filukk
   USE io_epw,       ONLY : iuukk
   USE wvfct,        ONLY : nbnd
   USE wannierEPW,   ONLY : n_wannier, iknum, u_mat, u_mat_opt, lwindow, &
-                           excluded_band, num_bands
+                           excluded_band, num_bands, wann_centers
   USE epwcom,       ONLY : filukk
-  USE constants_epw,ONLY : czero
+  USE constants_epw,ONLY : czero, bohr
   USE io_global,    ONLY : meta_ionode
+  USE cell_base,    ONLY : alat
   !
   IMPLICIT NONE
   !
@@ -1697,6 +1698,11 @@ SUBROUTINE write_filukk
     !
     DO ibnd = 1, nbnd
        WRITE(iuukk,*) excluded_band(ibnd)
+    ENDDO
+    ! 
+    ! Now write the Wannier centers to files
+    DO iw = 1, n_wannier
+      WRITE (iuukk,'(3f12.8)') wann_centers(:,iw)/alat/bohr
     ENDDO
     !
     CLOSE (iuukk)
