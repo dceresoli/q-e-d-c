@@ -77,6 +77,7 @@ esm.o \
 esm_cft.o \
 ewald.o \
 ewald_dipole.o \
+extpot.o \
 exx.o \
 fcp.o \
 find_group.o \

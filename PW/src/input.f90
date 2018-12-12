@@ -89,6 +89,7 @@ SUBROUTINE iosys()
                             block_height_   => block_height, &
                             forcefield, &
                             forcemono
+  USE extpot,        ONLY : external_potential_ => external_potential
   !
   USE io_files,      ONLY : input_drho, output_drho, &
                             psfile, tmp_dir, wfc_dir, &
@@ -219,7 +220,7 @@ SUBROUTINE iosys()
                                gdir, nppstr, wf_collect,lelfield,lorbm,efield, &
                                nberrycyc, lkpoint_dir, efield_cart, lecrpa,    &
                                vdw_table_name, memory, tqmmm,                  &
-                               efield_phase, monopole
+                               efield_phase, monopole, external_potential
 
   !
   ! ... SYSTEM namelist
@@ -1127,6 +1128,7 @@ SUBROUTINE iosys()
         CALL errore( 'iosys', &
           'Unknown efield_phase', 1 )
   END SELECT
+  external_potential_ = external_potential
   tqr_        = tqr
   real_space_ = real_space
   !
