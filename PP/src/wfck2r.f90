@@ -63,6 +63,7 @@ PROGRAM wfck2r
   INTEGER            :: npw, iunitout,ios,ik,i,iuwfcr,lrwfcr,ibnd, ig, is
   LOGICAL            :: exst
   COMPLEX(DP), ALLOCATABLE :: evc_r(:,:), dist_evc_r(:,:)
+  COMPLEX(DP) :: val
   INTEGER :: first_k, last_k, first_band, last_band
   INTEGER :: nevery(3), i1, i2, i3
   LOGICAL :: loctave
@@ -232,13 +233,14 @@ PROGRAM wfck2r
         dist_evc_r(1:dffts%nnr,:)=evc_r(1:dffts%nnr,:)
 #endif
 
-        if (ionode) call davcio (dist_evc_r, lrwfcr, iuwfcr, (ik-1)*nbnd+ibnd, +1)
+        if (ionode .and. .not. loctave) call davcio (dist_evc_r, lrwfcr, iuwfcr, (ik-1)*nbnd+ibnd, +1)
         if (ionode .and. loctave) then
            do i3 = 1, dffts%nr3x, nevery(3)
            do i2 = 1, dffts%nr2x, nevery(2)
            do i1 = 1, dffts%nr1x, nevery(1)
-               write(iuwfcr+1,'("(",E20.12,",",E20.12,")")') &
-                                  dist_evc_r(i1 + (i2-1)*dffts%nr2x + (i3-1)*dffts%nr3x*dffts%nr2x,1)
+               !val = local_average()
+               val = dist_evc_r(i1 + (i2-1)*dffts%nr2x + (i3-1)*dffts%nr3x*dffts%nr2x,1)
+               write(iuwfcr+1,'("(",E20.12,",",E20.12,")")') val
            enddo
            enddo
            enddo
@@ -260,4 +262,45 @@ PROGRAM wfck2r
   CALL stop_pp
   STOP
 
+
+  CONTAINS
+
+  FUNCTION local_average
+    implicit none
+    complex(dp) :: local_average
+    integer k1,k2,k3, nk
+    integer ii1,ii2,ii3
+
+    local_average = (0.d0,0.d0)
+    nk = 0
+    !do k1 = -nevery(1)/2,nevery(1)/2
+    !do k2 = -nevery(2)/2,nevery(2)/2
+    !do k3 = -nevery(3)/2,nevery(3)/2
+    do k1 = -1,1
+    do k2 = -1,1
+    do k3 = -1,1
+
+       ii1 = i1 + k1
+       if (ii1 < 1) ii1 = ii1 + dffts%nr1
+       if (ii1 > dffts%nr1) ii1 = ii1 - dffts%nr1
+
+       ii2 = i2 + k2
+       if (ii2 < 1) ii2 = ii2 + dffts%nr2
+       if (ii2 > dffts%nr2) ii2 = ii2 - dffts%nr2
+       
+       ii3 = i3 + k3
+       if (ii3 < 1) ii3 = ii3 + dffts%nr3
+       if (ii3 > dffts%nr3) ii3 = ii3 - dffts%nr3
+
+       nk = nk + 1
+
+       local_average = local_average + dist_evc_r(ii1 + (ii2-1)*dffts%nr2x + (ii3-1)*dffts%nr3x*dffts%nr2x,1)
+    enddo
+    enddo
+    enddo
+    local_average = local_average / nk
+    return
+  END FUNCTION local_average
+
 end PROGRAM wfck2r
+
