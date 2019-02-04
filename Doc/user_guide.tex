@@ -759,10 +759,19 @@ and won't do any extra search.
 \subsection{Compilation}
 \label{SubSec:Compilation}
 
-There are a few adjustable parameters in \texttt{Modules/parameters.f90}.
-The
-present values will work for most cases. All other variables are dynamically
-allocated: you should never need to recompile your code.
+The compiled codes can run with any input: almost all variables are
+dinamically allocated at run-time. Only a few variables have fixed
+dimensions, set in file \texttt{Modules/parameters.f90}:
+\begin{verbatim}
+      ntypx  = 10,     &! max number of different types of atom
+      npsx   = ntypx,  &! max number of different PPs (obsolete)
+      nsx    = ntypx,  &! max number of atomic species (CP)
+      npk    = 40000,  &! max number of k-points
+      lmaxx  = 3,      &! max non local angular momentum (l=0 to lmaxx)
+      lqmax= 2*lmaxx+1  ! max number of angular momenta of Q
+\end{verbatim}
+These values should work for the vast majority of cases. In case you need
+more atomic types or more k-points, edit this file and recompile.
 
 At your choice, you may compile the complete \qe\ suite of programs
 (with \texttt{make all}), or only some specific programs. \texttt{make} with no arguments yields a list of valid compilation targets:
@@ -1414,6 +1423,15 @@ that writes them to disk, in a single file,
 using a format that doesn't depend upon
 the number of processors or their distribution.
 This is the default since v.6.2 for final data.
+\item ``portable'': as above, but data can be 
+copied to and read from a different machines
+(this is not guaranteed with Fortran binary files).
+Requires compilation with \verb|-D__HDF5|
+preprocessing option and HDF% libraries.
+\end{itemize}
+There is a third format, no longer used for final
+data but used for scratch and restart files:
+\begin{itemize}
 \item ``distributed'': each processor
 writes its own slice to disk in its internal
 format to a different file.
@@ -1427,10 +1445,7 @@ processors (i.e., you cannot use local scratch
 directories: there is presently no way to ensure
 that the distribution of processes across
 processors will follow the same pattern
-for different jobs). The distributed format for
-final data requires compilation with \verb|-D__OLDXML|
-preprocessing option and will be removed
-in the next releases.
+for different jobs).
 \end{itemize}
 
 The directory for data is specified in input variables
@@ -1452,7 +1467,7 @@ and writes to it) but you may run into trouble anyway if you
 need to access your files that are scattered in an unpredictable
 way across disks residing on different nodes.
 
-You can use input variable \texttt{disk\_io} to reduce the the
+You can use input variable \texttt{disk\_io} to vary the
 amount of I/O done by \pwx. Since v.5.1, the dafault value is
 \texttt{disk\_io='low'}, so the code will store wavefunctions
 into RAM and not on disk during the calculation. Specify
@@ -1460,9 +1475,9 @@ into RAM and not on disk during the calculation. Specify
 and you run into trouble with memory; choose \texttt{disk\_io='none'}
 if you do not need to keep final data files.
 
-For very large \cpx\ runs, you may consider using
-\texttt{wf\_collect=.false.}, \texttt{memory='small'} and
-\texttt{saverho=.false.} to reduce I/O to the strict minimum.
+% For very large \cpx\ runs, you may consider using
+% \texttt{wf\_collect=.false.}, \texttt{memory='small'} and
+% \texttt{saverho=.false.} to reduce I/O to the strict minimum.
 
 \subsection{Tricks and problems}
 \label{SubSec:badpara}

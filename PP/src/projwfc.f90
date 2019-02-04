@@ -24,13 +24,13 @@ PROGRAM do_projwfc
   USE io_files,   ONLY : nd_nmbr, prefix, tmp_dir
   USE noncollin_module, ONLY : noncolin
   USE mp,         ONLY : mp_bcast
-  USE spin_orb,   ONLY: lforcet
-  USE mp_world,   ONLY : world_comm
-  USE mp_global,  ONLY : mp_startup, nproc_ortho, nproc_pool, nproc_pool_file
+  USE spin_orb,   ONLY : lforcet
+  USE mp_global,  ONLY : mp_startup
+  USE mp_images,  ONLY : intra_image_comm
+  USE mp_diag,    ONLY : nproc_ortho
   USE environment,ONLY : environment_start, environment_end
   USE wvfct,      ONLY : et, nbnd
   USE basis,      ONLY : natomwfc
-  USE control_flags, ONLY: twfcollect
   USE paw_variables, ONLY : okpaw
   ! following modules needed for generation of tetrahedra
   USE ktetra,     ONLY : tetra, tetra_type, opt_tetra_init
@@ -88,14 +88,11 @@ PROGRAM do_projwfc
   n_proj_boxes= 1
   irmin(:,:)  = 1
   irmax(:,:)  = 0
+  ef_0 = 0.d0
+  lforcet = .false.
   !
   ios = 0
   !
-
-  ef_0 = 0.d0
-  lforcet = .false.
-
-
   IF ( ionode )  THEN
      !
      CALL input_from_file ( )
@@ -109,32 +106,30 @@ PROGRAM do_projwfc
      !
   ENDIF
   !
-  CALL mp_bcast (ios, ionode_id, world_comm )
+  CALL mp_bcast (ios, ionode_id, intra_image_comm )
   IF (ios /= 0) CALL errore ('do_projwfc', 'reading projwfc namelist', abs (ios) )
   !
   ! ... Broadcast variables
   !
-  CALL mp_bcast( tmp_dir,   ionode_id, world_comm )
-  CALL mp_bcast( prefix,    ionode_id, world_comm )
-  CALL mp_bcast( filproj,   ionode_id, world_comm )
-  CALL mp_bcast( ngauss1,   ionode_id, world_comm )
-  CALL mp_bcast( degauss1,  ionode_id, world_comm )
-  CALL mp_bcast( DeltaE,    ionode_id, world_comm )
-  CALL mp_bcast( lsym,      ionode_id, world_comm )
-  CALL mp_bcast( Emin,      ionode_id, world_comm )
-  CALL mp_bcast( Emax,      ionode_id, world_comm )
-  CALL mp_bcast( lwrite_overlaps, ionode_id, world_comm )
-  CALL mp_bcast( lbinary_data,    ionode_id, world_comm )
-  CALL mp_bcast( lgww,      ionode_id, world_comm )
-  CALL mp_bcast( pawproj,   ionode_id, world_comm )
-  CALL mp_bcast( tdosinboxes,     ionode_id, world_comm )
-  CALL mp_bcast( n_proj_boxes,    ionode_id, world_comm )
-  CALL mp_bcast( irmin,     ionode_id, world_comm )
-  CALL mp_bcast( irmax,     ionode_id, world_comm )
-  CALL mp_bcast( ef_0, ionode_id, world_comm )
-  CALL mp_bcast( lforcet, ionode_id, world_comm )
-
-
+  CALL mp_bcast( tmp_dir,   ionode_id, intra_image_comm )
+  CALL mp_bcast( prefix,    ionode_id, intra_image_comm )
+  CALL mp_bcast( filproj,   ionode_id, intra_image_comm )
+  CALL mp_bcast( ngauss1,   ionode_id, intra_image_comm )
+  CALL mp_bcast( degauss1,  ionode_id, intra_image_comm )
+  CALL mp_bcast( DeltaE,    ionode_id, intra_image_comm )
+  CALL mp_bcast( lsym,      ionode_id, intra_image_comm )
+  CALL mp_bcast( Emin,      ionode_id, intra_image_comm )
+  CALL mp_bcast( Emax,      ionode_id, intra_image_comm )
+  CALL mp_bcast( lwrite_overlaps, ionode_id, intra_image_comm )
+  CALL mp_bcast( lbinary_data,    ionode_id, intra_image_comm )
+  CALL mp_bcast( lgww,      ionode_id, intra_image_comm )
+  CALL mp_bcast( pawproj,   ionode_id, intra_image_comm )
+  CALL mp_bcast( tdosinboxes,     ionode_id, intra_image_comm )
+  CALL mp_bcast( n_proj_boxes,    ionode_id, intra_image_comm )
+  CALL mp_bcast( irmin,     ionode_id, intra_image_comm )
+  CALL mp_bcast( irmax,     ionode_id, intra_image_comm )
+  CALL mp_bcast( ef_0, ionode_id, intra_image_comm )
+  CALL mp_bcast( lforcet, ionode_id, intra_image_comm )
   !
   !   Now allocate space for pwscf variables, read and check them.
   !
@@ -142,14 +137,17 @@ PROGRAM do_projwfc
   !
   IF(lgww) CALL get_et_from_gww ( nbnd, et )
   !
+  ! Input checks 
+  !
   IF (pawproj) THEN
     IF ( .NOT. okpaw ) CALL errore ('projwfc','option pawproj only for PAW',1)
     IF ( noncolin )  CALL errore ('projwfc','option pawproj and noncolinear spin not implemented',2)
+    IF ( lforcet ) CALL errore ('projwfc','incompatible options',1)
+    IF ( tdosinboxes ) CALL errore ('projwfc','incompatible options',2)
   END IF
+  IF ( lforcet .AND. tdosinboxes ) CALL errore ('projwfc','incompatible options',3)
   !
-  IF (nproc_pool /= nproc_pool_file .and. .not. twfcollect)  &
-     CALL errore('projwfc',&
-     'pw.x run with a different number of procs/pools. Use wf_collect=.true.',1)
+  ! More initializations
   !
   CALL openfil_pp ( )
   !
@@ -206,11 +204,8 @@ PROGRAM do_projwfc
   !
   IF ( filpdos == ' ') filpdos = prefix
   !
-
-
-IF ( lforcet ) THEN
-    CALL projwave_nc(filproj,lsym,lwrite_overlaps,lbinary_data,ef_0)
-ELSE
+  ! Now compute projections
+  !
   IF ( tdosinboxes ) THEN
      CALL projwave_boxes (filpdos, filproj, n_proj_boxes, irmin, irmax, plotboxes)
   ELSE IF ( pawproj ) THEN
@@ -218,7 +213,7 @@ ELSE
   ELSE
      IF ( natomwfc <= 0 ) CALL errore &
         ('do_projwfc', 'Cannot project on zero atomic wavefunctions!', 1)
-     IF (noncolin) THEN
+     IF ( lforcet .OR. noncolin ) THEN
         CALL projwave_nc(filproj, lsym, lwrite_overlaps, lbinary_data,ef_0)
      ELSE
         IF( nproc_ortho > 1 ) THEN
@@ -229,7 +224,7 @@ ELSE
      ENDIF
   ENDIF
   !
-  IF ( ionode ) THEN
+  IF ( ionode .AND. .NOT. lforcet ) THEN
      IF ( tdosinboxes ) THEN
         CALL partialdos_boxes (Emin, Emax, DeltaE, kresolveddos, filpdos, n_proj_boxes)
      ELSE IF ( lsym .OR. kresolveddos ) THEN
@@ -240,9 +235,6 @@ ELSE
         ENDIF
      ENDIF
   ENDIF
-ENDIF
-
-
   !
   CALL environment_end ( 'PROJWFC' )
   !
@@ -863,9 +855,8 @@ SUBROUTINE projwave_nc(filproj, lsym, lwrite_ovp, lbinary, ef_0 )
   USE becmod,   ONLY: bec_type, becp, calbec, allocate_bec_type, deallocate_bec_type
   USE io_files, ONLY: nd_nmbr, prefix, tmp_dir, nwordwfc, iunwfc
   USE wavefunctions, ONLY: evc
-  USE mp_global, ONLY : intra_pool_comm
   USE mp,        ONLY : mp_sum
-  USE mp_pools,             ONLY : inter_pool_comm
+  USE mp_pools,  ONLY : inter_pool_comm, intra_pool_comm
   !
   USE spin_orb,   ONLY: lspinorb, domag, lforcet
   USE projections
@@ -887,7 +878,7 @@ SUBROUTINE projwave_nc(filproj, lsym, lwrite_ovp, lbinary, ef_0 )
   COMPLEX(DP), ALLOCATABLE :: overlap(:,:), work(:,:), work1(:), proj0(:,:)
   ! Some workspace for k-point calculation ...
   REAL(DP), ALLOCATABLE :: charges(:,:,:), proj1 (:), eband_proj(:)
-  REAL(DP) :: psum, fact(2), spinor, compute_mj
+  REAL(DP) :: psum, fact(2), compute_mj
   INTEGER, ALLOCATABLE :: idx(:)
   !
   COMPLEX(DP) :: d12(2, 2, 48), d32(4, 4, 48), d52(6, 6, 48), &
@@ -1809,10 +1800,9 @@ SUBROUTINE pprojwave( filproj, lsym, lwrite_ovp, lbinary )
   USE io_files, ONLY: nd_nmbr, prefix, tmp_dir, nwordwfc, iunwfc
   USE spin_orb, ONLY: lspinorb
   USE mp,       ONLY: mp_bcast
-  USE mp_global,        ONLY : npool, me_pool, root_pool, &
-                               intra_pool_comm, me_image, &
-                               ortho_comm, np_ortho, me_ortho, ortho_comm_id, &
-                               leg_ortho, ortho_cntx
+  USE mp_pools, ONLY: root_pool, intra_pool_comm
+  USE mp_diag,  ONLY: ortho_comm, np_ortho, me_ortho, ortho_comm_id, &
+                      leg_ortho, ortho_cntx
   USE wavefunctions, ONLY: evc
   USE parallel_toolkit, ONLY : zsqmred, zsqmher, zsqmdst, zsqmcll, dsqmsym
   USE zhpev_module,     ONLY : pzhpev_drv, zhpev_drv
