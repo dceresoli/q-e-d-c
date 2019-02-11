@@ -2950,6 +2950,14 @@ subroutine tau_xc (rho, grho, tau, ex, ec, v1x, v2x, v3x, v1c, v2c, v3c)
      call  tb09cxc (rho, grho, tau, ex, ec, v1x, v2x, v3x, v1c, v2c, v3c)
   elseif (imeta == 4) then
      ! do nothing
+     ex = 0.d0
+     ec = 0.d0
+     v1x = 0.d0
+     v2x = 0.d0
+     v3x = 0.d0
+     v1c = 0.d0
+     v2c = 0.d0
+     v3c = 0.d0
   elseif (imeta == 5) then
      call  SCANcxc (rho, grho, tau, ex, ec, v1x, v2x, v3x, v1c, v2c, v3c)
   else
