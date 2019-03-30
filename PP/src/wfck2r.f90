@@ -175,21 +175,22 @@ PROGRAM wfck2r
      write(iuwfcr+1,'("# name: ",A,/,"# type: matrix")') 'eigs'
      write(iuwfcr+1,'("# rows: ",I5)') last_k-first_k+1
      write(iuwfcr+1,'("# columns: ",I5)') last_band-first_band+1
-     do i = first_band, last_band
-        write(iuwfcr+1,'(E20.12)') (et(i,ik)*rytoev, ik=first_k,last_k)
+     do ik = first_k, last_k
+        write(iuwfcr+1,'(E20.12)') (et(i,ik)*rytoev, i=first_band,last_band)
      enddo
      write(iuwfcr+1,*)
      write(iuwfcr+1,'("# name: ",A,/,"# type: matrix")') 'occup'
      write(iuwfcr+1,'("# rows: ",I5)') last_k-first_k+1
      write(iuwfcr+1,'("# columns: ",I5)') last_band-first_band+1
-     do i = first_band, last_band
-        write(iuwfcr+1,'(E20.12)') (wg(i,ik)/wk(ik), ik=first_k,last_k)
+     do ik = first_k, last_k
+        write(iuwfcr+1,'(E20.12)') (wg(i,ik)/wk(ik), i=first_band,last_band)
      enddo
      write(iuwfcr+1,*)
      ! FFT mesh
      write(iuwfcr+1,'("# name: ",A,/,"# type: scalar",/,I3,//)') 'nr1x', dffts%nr1x / nevery(1)
      write(iuwfcr+1,'("# name: ",A,/,"# type: scalar",/,I3,//)') 'nr2x', dffts%nr2x / nevery(2)
      write(iuwfcr+1,'("# name: ",A,/,"# type: scalar",/,I3,//)') 'nr3x', dffts%nr3x / nevery(3)
+     ! wavefunctions
      write(iuwfcr+1,'("# name: ",A,/,"# type: complex matrix")') 'unkr'
      write(iuwfcr+1,'("# ndims: 5")')
      write(iuwfcr+1,'(5I10)') dffts%nr1x/nevery(1), dffts%nr2x/nevery(2), dffts%nr3x/nevery(3), &
@@ -199,7 +200,6 @@ PROGRAM wfck2r
   ALLOCATE ( evc_r(dffts%nnr,npol) )
   ALLOCATE ( dist_evc_r(dffts%nr1x*dffts%nr2x*dffts%nr3x,npol) )
   
-
   DO ik = first_k, last_k
      
      npw = ngk(ik)
