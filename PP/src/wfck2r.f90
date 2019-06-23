@@ -124,31 +124,32 @@ PROGRAM wfck2r
   exst=.false.
 
   filename='wfc_r'
-  write(6,*) 'filename              = ', trim(filename)
+  if (.not. loctave) write(stdout,*) 'filename              = ', trim(filename)
   iuwfcr=877
   lrwfcr = 2 * dffts%nr1x*dffts%nr2x*dffts%nr3x * npol
   ! lrwfc = 2 * nbnd * npwx * npol
-  write(6,*) 'dffts%nnr, npwx       =', dffts%nnr, npwx
+  write(stdout,*) 'dffts%nnr, npwx       =', dffts%nnr, npwx
  
   if (first_k <= 0) first_k = 1 
   if (last_k <= 0) last_k = nks
   if (first_band <= 0) first_band = 1 
   if (last_band <= 0) last_band = nbnd
-  write(6,*) 'first_k, last_k       =', first_k, last_k
-  write(6,*) 'first_band, last_band =', first_band, last_band
+  write(stdout,*) 'first_k, last_k       =', first_k, last_k
+  write(stdout,*) 'first_band, last_band =', first_band, last_band
   if (mod(dffts%nr1x,nevery(1)) /= 0) call errore("wfck2r", "nr1x not multiple of nevery(1)", 1)
   if (mod(dffts%nr2x,nevery(2)) /= 0) call errore("wfck2r", "nr2x not multiple of nevery(2)", 1)
   if (mod(dffts%nr3x,nevery(3)) /= 0) call errore("wfck2r", "nr3x not multiple of nevery(3)", 1)
-  write(6,*)
+  write(stdout,*)
 
-  write(6,*) 'length of wfc in real space/per band', (last_k-first_k+1)*lrwfcr*8
-  write(6,*) 'length of wfc in k space', 2*(last_band-first_band+1)*npwx*nks*8
+  write(stdout,*) 'length of wfc in real space/per band', (last_k-first_k+1)*lrwfcr*8
+  write(stdout,*) 'length of wfc in k space', 2*(last_band-first_band+1)*npwx*nks*8
+  if (loctave) write(stdout,'(1X,''GNU octave output, nevery='',(3I4))') nevery
   CALL init_us_1
 
 !
 !define lrwfcr
 !
-  IF (ionode) CALL diropn (iuwfcr, filename, lrwfcr, exst)
+  IF (ionode .and. .not. loctave) CALL diropn (iuwfcr, filename, lrwfcr, exst)
   IF (loctave .and. ionode) then
      open(unit=iuwfcr+1, file='wfck2r.oct', status='unknown', form='formatted')
      write(iuwfcr+1,'(A)') '# created by wfck2r.x of Quantum-Espresso'
@@ -209,6 +210,7 @@ PROGRAM wfck2r
         !
         ! perform the fourier transform
         !
+        write(stdout,'(1X,''ik='',I4,4X,''ibnd='',I4)') ik, ibnd
         evc_r = (0.d0, 0.d0)     
         do ig = 1, npw
            evc_r (nls (igk_k(ig,ik) ),1 ) = evc (ig,ibnd)
@@ -239,7 +241,7 @@ PROGRAM wfck2r
            do i2 = 1, dffts%nr2x, nevery(2)
            do i1 = 1, dffts%nr1x, nevery(1)
                !val = local_average()
-               val = dist_evc_r(i1 + (i2-1)*dffts%nr2x + (i3-1)*dffts%nr3x*dffts%nr2x,1)
+               val = dist_evc_r(i1 + (i2-1)*dffts%nr1x + (i3-1)*dffts%nr1x*dffts%nr2x,1)
                write(iuwfcr+1,'("(",E20.12,",",E20.12,")")') val
            enddo
            enddo
@@ -253,7 +255,7 @@ PROGRAM wfck2r
 
   enddo
 
-  if (ionode) close(iuwfcr)
+  if (ionode .and. .not. loctave) close(iuwfcr)
   if (loctave .and. ionode) close(iuwfcr+1)
   DEALLOCATE (evc_r)
 
