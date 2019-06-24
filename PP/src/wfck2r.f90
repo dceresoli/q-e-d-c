@@ -146,9 +146,9 @@ PROGRAM wfck2r
   if (loctave) write(stdout,'(1X,''GNU octave output, nevery='',(3I4))') nevery
   CALL init_us_1
 
-!
-!define lrwfcr
-!
+ !
+ ! define lrwfcr
+ !
   IF (ionode .and. .not. loctave) CALL diropn (iuwfcr, filename, lrwfcr, exst)
   IF (loctave .and. ionode) then
      open(unit=iuwfcr+1, file='wfck2r.oct', status='unknown', form='formatted')
@@ -161,7 +161,7 @@ PROGRAM wfck2r
      write(iuwfcr+1,'("# rows: ",I5)') last_k-first_k+1
      write(iuwfcr+1,'("# columns: ",I5)') 3
      do ik = first_k, last_k
-        write(iuwfcr+1,'(E20.12)') (xk(i,ik), i=1,3)
+        write(iuwfcr+1,'(F20.12)') (xk(i,ik), i=1,3)
      enddo
      write(iuwfcr+1,*)
      write(iuwfcr+1,'("# name: ",A,/,"# type: matrix")') 'wk'
@@ -184,7 +184,7 @@ PROGRAM wfck2r
      write(iuwfcr+1,'("# rows: ",I5)') last_k-first_k+1
      write(iuwfcr+1,'("# columns: ",I5)') last_band-first_band+1
      do ik = first_k, last_k
-        write(iuwfcr+1,'(E20.12)') (wg(i,ik)/wk(ik), i=first_band,last_band)
+        write(iuwfcr+1,'(F20.12)') (wg(i,ik)/wk(ik), i=first_band,last_band)
      enddo
      write(iuwfcr+1,*)
      ! FFT mesh
