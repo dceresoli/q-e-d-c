@@ -39,7 +39,7 @@ MODULE lr_exx_kernel
   USE wavefunctions,          ONLY : psic
   USE cell_base,              ONLY : omega
   USE exx_base,               ONLY : g2_convolution
-  USE exx,                    ONLY : exxalfa, npwt, gt, dfftt
+  USE exx,                    ONLY : exxalfa, npwt, gt, dfftt 
 
 
   REAL(kind=dp),    PUBLIC, ALLOCATABLE :: revc_int(:,:)
@@ -65,14 +65,15 @@ CONTAINS
   SUBROUTINE lr_exx_restart( set_ace )
      !------------------------------------------------------------------------
      !This SUBROUTINE is called when restarting an exx calculation
-     USE funct,     ONLY : get_exx_fraction, start_exx, &
+     USE xc_lib,    ONLY : xclib_get_exx_fraction, start_exx, &
                            exx_is_active, get_screening_parameter
+     
      USE cell_base, ONLY : at
      USE exx_base,  ONLY : exxdiv, erfc_scrlen, exx_divergence, exx_grid_init,&
                            exx_div_check
      ! FIXME: are these variable useful?
      USE exx,       ONLY : fock0, exxenergy2, local_thr, use_ace
-     USE exx,       ONLY : exxinit, aceinit, exx_gvec_reinit
+     USE exx,       ONLY : exxinit, aceinit, exx_gvec_reinit 
 
      IMPLICIT NONE
      LOGICAL, INTENT(in) :: set_ace
@@ -85,13 +86,13 @@ CONTAINS
      erfc_scrlen = get_screening_parameter()
      
      exxdiv = exx_divergence()
-     exxalfa = get_exx_fraction()
+     exxalfa = xclib_get_exx_fraction()
      CALL start_exx()
      CALL weights()
      ! FIXME: is this useful ?
-     IF(local_thr.gt.0.0d0) Call errore('exx_restart','SCDM with restart NYI',1)
+     IF(local_thr.gt.0.0d0) CALL errore('exx_restart','SCDM with restart NYI',1)
      CALL exxinit(.false.)
-     IF (use_ace) CALL aceinit ( )
+     IF (use_ace) CALL aceinit ( DOLOC = .FALSE. )
      ! FIXME: are these variable useful?
      fock0 = exxenergy2()
      !
@@ -360,7 +361,7 @@ SUBROUTINE lr_exx_kernel_noint ( evc, int_vect )
   USE exx,                    ONLY : exxalfa
   USE symm_base,              ONLY : s
   USE cell_base,              ONLY : bg, at
-  USE funct,                  ONLY : exx_is_active
+  USE xc_lib,                 ONLY : exx_is_active
   USE io_global,              ONLY : stdout
   USE mp_global,              ONLY : inter_bgrp_comm, ibnd_start, ibnd_end,&
                                    & me_bgrp
@@ -622,7 +623,7 @@ SUBROUTINE lr_exx_kernel_int ( orbital, ibnd, nbnd, ikk )
                                      index_xkq, index_xk, rir, nkqs
   USE symm_base,              ONLY : s
   USE cell_base,              ONLY : bg, at
-  USE funct,                  ONLY : exx_is_active
+  USE xc_lib,                 ONLY : exx_is_active
   USE mp_global,              ONLY : me_bgrp
   USE scatter_mod,            ONLY : gather_grid, scatter_grid
   USE lr_variables,           ONLY : ltammd
@@ -825,7 +826,6 @@ FUNCTION k1d_term_gamma(w1, w2, psi, fac_in, ibnd, orbital) RESULT (psi_int)
   !
   INTEGER                  :: ibnd2, is, npw_, ngm_, nnr_
   INTEGER                  :: nrec
-  INTEGER                  :: idxvhartr, idxvharti
   !
   npw_=npwt
   ngm_=dfftt%ngm

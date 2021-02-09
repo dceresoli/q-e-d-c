@@ -7,11 +7,10 @@
 !
 !
 !----------------------------------------------------------------------------
-SUBROUTINE g2_kin ( ik )
+SUBROUTINE g2_kin( ik )
   !----------------------------------------------------------------------------
-  !
-  ! ... Calculation of kinetic energy - includes the case of the modified
-  ! ... kinetic energy functional for variable-cell calculations
+  !! Calculation of kinetic energy - includes the case of the modified
+  !! kinetic energy functional for variable-cell calculations.
   !
   USE kinds,                ONLY : DP
   USE cell_base,            ONLY : tpiba2 
@@ -19,10 +18,11 @@ SUBROUTINE g2_kin ( ik )
   USE gvect,                ONLY : g
   USE gvecw,                ONLY : ecfixed, qcutz, q2sigma
   USE wvfct,                ONLY : g2kin
+  USE wvfct_gpum,           ONLY : using_g2kin
   !
   IMPLICIT NONE
   !
-  INTEGER, INTENT (IN) :: ik
+  INTEGER, INTENT(IN) :: ik
   !
   ! ... local variables
   !
@@ -30,6 +30,7 @@ SUBROUTINE g2_kin ( ik )
   REAL(DP), EXTERNAL :: qe_erf
   !
   !
+  CALL using_g2kin(1)
   npw = ngk(ik)
   g2kin(1:npw) = ( ( xk(1,ik) + g(1,igk_k(1:npw,ik)) )**2 + &
                    ( xk(2,ik) + g(2,igk_k(1:npw,ik)) )**2 + &

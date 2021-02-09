@@ -49,7 +49,6 @@ subroutine descreening
   integer :: l
   real(dp) :: dummyr, dummy(0:2)
 
-#if 0
   !<ceres>
   open(unit=19,file=trim(prefix)//'.scr', status='unknown')
   do n=1,grid%mesh
@@ -58,6 +57,7 @@ subroutine descreening
   close(19)
   !</ceres>
 
+#if 0
   !<ceres>
   open(unit=19,file='LocPot.dat',status='old',iostat=ios)
   if (ios == 0) then

@@ -27,14 +27,14 @@ SUBROUTINE lr_readin
   USE wvfct,               ONLY : nbnd, et, wg, current_k
   USE lsda_mod,            ONLY : isk
   USE ener,                ONLY : ef
-  USE io_global,           ONLY : ionode, ionode_id, stdout
+  USE io_global,           ONLY : ionode, ionode_id, stdout, meta_ionode, meta_ionode_id
   USE klist,               ONLY : nks, wk, nelec, lgauss, ltetra
   USE fixed_occ,           ONLY : tfixed_occ
-  USE input_parameters,    ONLY : degauss, nosym, wfcdir, outdir
+  USE symm_base,           ONLY : nosym
   USE check_stop,          ONLY : max_seconds
   USE realus,              ONLY : real_space, init_realspace_vars, generate_qpointlist, &
                                   betapointlist
-  USE funct,               ONLY : dft_is_meta
+  USE xc_lib,              ONLY : xclib_dft_is
   USE charg_resp,          ONLY : w_T_prefix, omeg, w_T_npol, epsil
   USE mp,                  ONLY : mp_bcast
   USE mp_global,           ONLY : my_pool_id, intra_image_comm, &
@@ -48,13 +48,14 @@ SUBROUTINE lr_readin
   USE esm,                 ONLY : do_comp_esm
   USE qpoint,              ONLY : xq
   USE io_rho_xml,          ONLY : write_scf
-  USE noncollin_module,    ONLY : noncolin
   USE mp_bands,            ONLY : ntask_groups
-  USE constants,           ONLY : eps4
-  USE control_lr,          ONLY : lrpa
+  USE constants,           ONLY : eps4, rytoev
+  USE control_lr,          ONLY : lrpa, alpha_mix, ethr_nscf
+  USE mp_world,            ONLY : world_comm
 
   IMPLICIT NONE
   !
+  CHARACTER(LEN=256) :: wfcdir = 'undefined', outdir
   CHARACTER(LEN=256), EXTERNAL :: trimcheck
   !
   CHARACTER(LEN=256) :: beta_gamma_z_prefix
@@ -63,14 +64,17 @@ SUBROUTINE lr_readin
   ! Specify the amount of I/O activities
   CHARACTER(LEN=6) :: int_to_char
   INTEGER :: ios, iunout, ierr, ipol
-  LOGICAL, EXTERNAL  :: check_para_diag
+  !
+  CHARACTER(LEN=80)          :: card
+  INTEGER :: i
   !
   NAMELIST / lr_input /   restart, restart_step ,lr_verbosity, prefix, outdir, &
                         & test_case_no, wfcdir, disk_io, max_seconds
   NAMELIST / lr_control / itermax, ipol, ltammd, lrpa,   &
                         & charge_response, no_hxc, n_ipol, project,      &
                         & scissor, pseudo_hermitian, d0psi_rs, lshift_d0psi, &
-                        & q1, q2, q3, approximation
+                        & q1, q2, q3, approximation, calculator, alpha_mix, start, &
+                        & end, increment, epsil, units, ethr_nscf 
   NAMELIST / lr_post /    omeg, beta_gamma_z_prefix, w_T_npol, plot_type, epsil, itermax_int,sum_rule
   namelist / lr_dav /     num_eign, num_init, num_basis_max, residue_conv_thr, precondition,         &
                         & dav_debug, reference,single_pole, sort_contr, diag_of_h, close_pre,        &
@@ -109,12 +113,12 @@ SUBROUTINE lr_readin
      test_case_no = 0
      beta_gamma_z_prefix = 'undefined'
      omeg= 0.0_DP
-     epsil = 0.0_DP
      w_T_npol = 1
      plot_type = 1
      project = .FALSE.
      max_seconds = 1.0E+7_DP
      scissor = 0.d0
+     ethr_nscf = 1.D-11
      !
      ! For EELS
      !
@@ -122,6 +126,18 @@ SUBROUTINE lr_readin
      q2 = 1.0d0
      q3 = 1.0d0
      approximation = 'TDDFT'
+     calculator = 'lanczos'
+     !
+     ! Sternheimer
+     !
+     start_freq=1
+     last_freq=0
+     alpha_mix(:) = 0.0D0
+     alpha_mix(1) = 0.7D0
+     units = 0
+     end = 2.5D0
+     epsil = 0.02D0
+     increment = 0.001D0
      !
      ! For lr_dav (Davidson program)
      !
@@ -303,8 +319,41 @@ SUBROUTINE lr_readin
   ENDIF
   !
   CALL bcast_lr_input
-
+  !
 #endif
+  !
+  IF ( trim(calculator)=='sternheimer' ) THEN
+     nfs=0
+     nfs = ((end-start) / increment) + 1
+     if (nfs < 1) call errore('lr_readin','Too few frequencies',1)
+     ALLOCATE(fiu(nfs))
+     ALLOCATE(fru(nfs))
+     ALLOCATE(comp_f(nfs))
+     comp_f=.TRUE.
+     IF (units == 0) THEN
+        fru(1) =start
+        fru(nfs) = end
+        deltaf = increment
+     ELSEIF (units == 1) THEN 
+        fru(1) =start/rytoev
+        fru(nfs) = end/rytoev
+        deltaf = increment/rytoev
+     ENDIF
+     fiu(:) = epsil
+     DO i=2,nfs-1
+        fru(i)=fru(1) + (i-1) * deltaf
+     ENDDO
+     IF (start_freq<=0) start_freq=1
+     IF (last_freq<=0.OR.last_freq>nfs) last_freq=nfs
+  ELSE
+     nfs=1
+     ALLOCATE(fru(1))
+     ALLOCATE(fiu(1))
+     ALLOCATE(comp_f(1))
+     fru=0.0_DP
+     fiu=0.0_DP
+     comp_f=.TRUE.
+  END IF
   !
   ! Required for restart runs as this never gets initialized.
   !
@@ -326,7 +375,7 @@ SUBROUTINE lr_readin
   ! read_file -> init_igk.
   ! EELS: the variables igk_k and ngk will be re-set up later (because there
   ! will be not only poins k but also points k+q) through the path:
-  ! lr_run_nscf -> init_run -> hinit0 -> init_igk
+  ! lr_run_nscf -> init_run -> allocate_wfc_k -> init_igk
   !
   CALL read_file()
   !
@@ -383,24 +432,6 @@ SUBROUTINE lr_readin
   ! I. Timrov: this was already done in read_file.
   current_spin = 1
   !
-  ! I. Timrov: The routine init_us_1 was already called in read_file above.
-  CALL init_us_1 ( )
-  !
-  ! I. Timrov: The routine newd was already called in read_file above.
-  !
-  CALL newd() !OBM: this is for the ground-state charge density
-  !
-  IF (tqr .AND. .NOT.eels) CALL generate_qpointlist()
-  !
-  IF ( real_space .AND. .NOT.eels) THEN
-     !
-     WRITE(stdout,'(/5x,"Real space implementation V.1 D190908",1x)')
-     ! OBM - correct parellism issues
-     CALL init_realspace_vars()
-     CALL betapointlist()
-     WRITE(stdout,'(5X,"Real space initialisation completed")')
-  ENDIF
-  !
   ! Now put the potential calculated in read_file into the correct place
   ! and deallocate the redundant associated variables.
   ! Set the total local potential vrs on the smooth mesh
@@ -423,7 +454,7 @@ SUBROUTINE lr_readin
   !
   ! Scalapack related stuff.
   !
-  use_para_diag = check_para_diag( nbnd )
+  CALL set_para_diag( nbnd, use_para_diag )
   !
   RETURN
   !
@@ -439,7 +470,7 @@ CONTAINS
     !
     USE paw_variables,    ONLY : okpaw
     USE uspp,             ONLY : okvan
-    USE funct,            ONLY : dft_is_hybrid
+    USE xc_lib,           ONLY : xclib_dft_is
     USE ldaU,             ONLY : lda_plus_u
 
     IMPLICIT NONE
@@ -456,11 +487,16 @@ CONTAINS
            & CALL errore ('lr_readin', &
            & 'projection is possible only in charge response mode 1', 1 )
        !
+       IF (gamma_only) THEN
+          nosym=.true.
+          WRITE(stdout,*) "Symmetries are disabled for the gamma_only case"
+       ENDIF
+       !
     ENDIF
     !
     !  Meta-DFT currently not supported by TDDFPT
     !
-    IF (dft_is_meta()) CALL errore( 'lr_readin', 'Meta DFT is not implemented yet', 1 )
+    IF (xclib_dft_is('meta')) CALL errore( 'lr_readin', 'Meta DFT is not implemented yet', 1 )
     !
     ! Hubbard U is not supported
     !
@@ -493,7 +529,7 @@ CONTAINS
     !
     ! No taskgroups and EXX.
     !
-    IF (dffts%has_task_groups .AND. dft_is_hybrid()) &
+    IF (dffts%has_task_groups .AND. xclib_dft_is('hybrid')) &
          & CALL errore( 'lr_readin', ' Linear response calculation ' // &
          & 'not implemented for EXX+Task groups', 1 )
     !
@@ -513,7 +549,7 @@ CONTAINS
     !
     ! No USPP+EXX support.
     !
-    IF (okvan .AND. dft_is_hybrid()) &
+    IF (okvan .AND. xclib_dft_is('hybrid')) &
          & CALL errore( 'lr_readin', ' Linear response calculation ' // &
          & 'not implemented for EXX+Ultrasoft', 1 )
     !
@@ -534,7 +570,6 @@ CONTAINS
     !
     IF (eels) THEN
        !
-       IF (okvan .AND. noncolin) CALL errore( 'lr_readin', 'Ultrasoft PP + noncolin is not fully implemented', 1 )
        IF (gamma_only)  CALL errore( 'lr_readin', 'gamma_only is not supported', 1 )
        !
        ! Tamm-Dancoff approximation is not recommended to be used with EELS, and
@@ -545,7 +580,7 @@ CONTAINS
        IF (project)     CALL errore( 'lr_readin', 'project is not allowed', 1 )
        IF (tqr)         CALL errore( 'lr_readin', 'tqr is not supported', 1 )
        IF (charge_response /= 0) CALL errore( 'lr_readin', 'charge_response /= 0 is not allowed', 1 )
-       IF (dft_is_hybrid())    CALL errore( 'lr_readin', 'EXX is not supported', 1 )
+       IF (xclib_dft_is('hybrid'))    CALL errore( 'lr_readin', 'EXX is not supported', 1 )
        IF (do_comp_mt)  CALL errore( 'lr_readin', 'Martyna-Tuckerman PBC is not supported.', 1 )
        IF (d0psi_rs)    CALL errore( 'lr_readin', 'd0psi_rs is not allowed', 1 )
        !

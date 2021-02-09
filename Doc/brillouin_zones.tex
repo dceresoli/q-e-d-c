@@ -1,7 +1,6 @@
 \documentclass[12pt,a4paper]{article}
-\def\version{6.1}
+\def\version{6.7}
 \def\qe{{\sc Quantum ESPRESSO}}
-\def\qeforge{\texttt{qe-forge.org}}
 \textwidth = 17cm
 \textheight = 24cm
 \topmargin =-1 cm
@@ -12,17 +11,6 @@
 % doesn't handle epsfig commands !!!
 \usepackage{graphicx}
 \usepackage{amssymb}
-
-\def\configure{\texttt{configure}}
-\def\configurac{\texttt{configure.ac}}
-\def\autoconf{\texttt{autoconf}}
-
-\def\pwx{\texttt{pw.x}}
-\def\phx{\texttt{ph.x}}
-\def\configure{\texttt{configure}}
-\def\PWscf{\texttt{PWscf}}
-\def\PHonon{\texttt{PHonon}}
-\def\make{\texttt{make}}
 
 \begin{document} 
 \author{}
@@ -50,6 +38,7 @@ calculation to define paths in the BZ. This feature is available with
 the option \texttt{tpiba\_b} or \texttt{crystal\_b} in a \texttt{'bands'} 
 calculation or with the option \texttt{q\_in\_band\_form} in the input of the 
 \texttt{matdyn.x} code.
+BEWARE: you need to explicitly specify \texttt{ibrav} to use this feature.
 Lines in reciprocal space are defined by giving the coordinates of the 
 starting and ending points and the number of points of each line.
 The coordinates of the starting and ending points can be 

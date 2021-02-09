@@ -9,20 +9,18 @@
 !-----------------------------------------------------------------------
 SUBROUTINE summary()
   !-----------------------------------------------------------------------
-  !
-  !    This routine writes on output all the information obtained from
-  !    the input file and from the setup routine, before starting the
-  !    self-consistent calculation.
-  !
-  !    if iverbosity < 1 only a partial summary is done.
+  !! This routine writes on output all the information obtained from
+  !! the input file and from the setup routine, before starting the
+  !! self-consistent calculation.  
+  !! If iverbosity < 1 only a partial summary is done.
   !
   USE io_global,       ONLY : stdout
   USE kinds,           ONLY : DP
   USE run_info,        ONLY : title
   USE constants,       ONLY : amu_ry, rytoev
-  USE cell_base,       ONLY : alat, ibrav, omega, at, bg, celldm
+  USE cell_base,       ONLY : alat, ibrav, omega, at, bg, celldm, wmass
   USE ions_base,       ONLY : nat, atm, zv, tau, ntyp => nsp, ityp
-  USE cellmd,          ONLY : calc, cmass
+  USE cellmd,          ONLY : calc, lmovecell
   USE ions_base,       ONLY : amass
   USE gvect,           ONLY : ecutrho, ngm, ngm_g, gcutm
   USE gvecs,           ONLY : doublegrid, ngms, ngms_g, gcutms
@@ -39,7 +37,8 @@ SUBROUTINE summary()
                               tr2, isolve, lmd, lbfgs, iverbosity, tqr, tq_smoothing, tbeta_smoothing
   USE noncollin_module,ONLY : noncolin
   USE spin_orb,        ONLY : domag, lspinorb
-  USE funct,           ONLY : write_dft_name, dft_is_hybrid
+  USE funct,           ONLY : write_dft_name
+  USE xc_lib,          ONLY : xclib_dft_is
   USE bp,              ONLY : lelfield, gdir, nppstr_3d, efield, nberrycyc, &
                               l3dstring,efield_cart,efield_cry
   USE fixed_occ,       ONLY : f_inp, tfixed_occ
@@ -52,8 +51,9 @@ SUBROUTINE summary()
   USE martyna_tuckerman,ONLY: do_comp_mt
   USE realus,          ONLY : real_space
   USE exx,             ONLY : ecutfock
-  USE fcp_variables,   ONLY : lfcpopt, lfcpdyn
-  USE fcp,             ONLY : fcp_summary
+  USE fcp_module,      ONLY : lfcp, fcp_summary
+  USE gcscf_module,    ONLY : lgcscf, gcscf_summary
+  USE relax,           ONLY : epse, epsf, epsp
   !
   IMPLICIT NONE
   !
@@ -94,8 +94,10 @@ SUBROUTINE summary()
      WRITE( stdout, 102) nelec
   END IF
   WRITE( stdout, 103) nbnd, ecutwfc, ecutrho
-  IF ( dft_is_hybrid () ) WRITE( stdout, 104) ecutfock
+  IF ( xclib_dft_is('hybrid') ) WRITE( stdout, 104) ecutfock
   IF ( lscf) WRITE( stdout, 105) tr2, mixing_beta, nmix, mixing_style
+  IF ( lmd .OR. lbfgs ) WRITE (stdout, 106) epse, epsf
+  IF ( lmovecell ) WRITE (stdout, 107) epsp
   !
 100 FORMAT( /,/,5X, &
        &     'bravais-lattice index     = ',I12,/,5X, &
@@ -114,9 +116,14 @@ SUBROUTINE summary()
 104 FORMAT(5X, &
        &     'cutoff for Fock operator  = ',F12.4,'  Ry')
 105 FORMAT(5X, &
-       &     'convergence threshold     = ',1PE12.1,/,5X, &
+       &     'scf convergence threshold = ',1PE12.1,/,5X, &
        &     'mixing beta               = ',0PF12.4,/,5X, &
        &     'number of iterations used = ',I12,2X,A,' mixing')
+106 FORMAT(5X, &
+       &     'energy convergence thresh.= ',1PE12.1,/,5X, &
+       &     'force convergence thresh. = ',1PE12.1)
+107 FORMAT(5X, &
+       &     'press convergence thresh. = ',1PE12.1)
   !
   call write_dft_name ( ) 
   !
@@ -148,6 +155,9 @@ SUBROUTINE summary()
   !
   CALL plugin_summary()
   !
+  ! ... CUDA
+  !
+  CALL print_cuda_info()
   !
   ! ... ESM (Effective screening medium)
   !
@@ -155,7 +165,11 @@ SUBROUTINE summary()
   !
   ! ... FCP (Ficticious charge particle)
   !
-  IF ( lfcpopt .or. lfcpdyn )  CALL fcp_summary()
+  IF ( lfcp )  CALL fcp_summary()
+  !
+  ! ... GC-SCF (Grand-Canonical SCF)
+  !
+  IF ( lgcscf )  CALL gcscf_summary()
   !
   IF ( do_comp_mt )  WRITE( stdout, &
             '(5X, "Assuming isolated system, Martyna-Tuckerman method",/)')
@@ -198,10 +212,6 @@ SUBROUTINE summary()
   !
   CALL print_ps_info ( )
   !
-  !
-  ! ... print the vdw table information if needed
-  CALL print_vdw_info ()
-  !
   WRITE( stdout, '(/5x, "atomic species   valence    mass     pseudopotential")')
   xp = 1.d0
   DO nt = 1, ntyp
@@ -210,10 +220,9 @@ SUBROUTINE summary()
   ENDDO
 
   IF (calc.EQ.'cd' .OR. calc.EQ.'cm' ) &
-     WRITE( stdout, '(/5x," cell mass =", f10.5, " AMU ")') cmass/amu_ry
+     WRITE( stdout, '(/5x," cell mass =", f10.5, " AMU ")') wmass
   IF (calc.EQ.'nd' .OR. calc.EQ.'nm' ) &
-     WRITE( stdout, '(/5x," cell mass =", f10.5, " AMU/(a.u.)^2 ")') cmass/amu_ry
-
+     WRITE( stdout, '(/5x," cell mass =", f10.5, " AMU/(a.u.)^2 ")') wmass
   IF (ANY(starting_charge(:) /= 0.D0)) THEN
      WRITE( stdout, '(/5x,"Starting charge structure ", &
           &      /5x,"atomic species   charge")')
@@ -414,7 +423,6 @@ SUBROUTINE print_ps_info
   USE ions_base,       ONLY : ntyp => nsp
   USE atom,            ONLY : rgrid
   USE uspp_param,      ONLY : upf
-  USE funct,           ONLY : dft_is_gradient
   IMPLICIT NONE
   !
   INTEGER :: nt, ib, i
@@ -475,46 +483,37 @@ SUBROUTINE print_ps_info
 END SUBROUTINE print_ps_info
 !
 !-----------------------------------------------------------------------
-SUBROUTINE print_vdw_info
-  !-----------------------------------------------------------------------
-  !
-  USE io_global,       ONLY : stdout
-  USE io_files,        ONLY : psfile
-  USE funct,           ONLY : get_inlc 
-  USE kernel_table,    ONLY : vdw_table_name, vdw_kernel_md5_cksum
-
-  integer :: inlc
-
-  inlc = get_inlc()
-  if ( inlc > 0 ) then
-     WRITE( stdout, '(/5x,"vdW kernel table read from file ",a)') TRIM (vdw_table_name)
-     WRITE( stdout, '(5x,"MD5 check sum: ", a )') vdw_kernel_md5_cksum
-  endif 
-
-END SUBROUTINE print_vdw_info
-!
 SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
   !-----------------------------------------------------------------------
+  !! Print symmetry operations.
   !
-  USE kinds,           ONLY : dp
-  USE constants,       ONLY : eps6
-  USE io_global,       ONLY : stdout 
-  USE symm_base,       ONLY : nsym, nsym_ns, nsym_na, invsym, s, sr, &
-                              t_rev, ft, sname
-  USE rap_point_group, ONLY : code_group, nclass, nelem, elem, &
-       which_irr, char_mat, name_rap, name_class, gname, ir_ram, elem_name
+  USE kinds,              ONLY : dp
+  USE constants,          ONLY : eps6
+  USE io_global,          ONLY : stdout 
+  USE symm_base,          ONLY : nsym, nsym_ns, nsym_na, invsym, s, sr, &
+                                 t_rev, ft, sname
+  USE rap_point_group,    ONLY : code_group, nclass, nelem, elem, &
+                                 which_irr, char_mat, name_rap,   &
+                                 name_class, gname, ir_ram, elem_name
   USE rap_point_group_so, ONLY : nrap, nelem_so, elem_so, has_e, &
-       which_irr_so, char_mat_so, name_rap_so, name_class_so, d_spin, &
-       name_class_so1, elem_name_so
-  USE rap_point_group_is, ONLY : nsym_is, sr_is, ftau_is, d_spin_is, &
-       gname_is, sname_is, code_group_is
-  USE cell_base,       ONLY : at, ibrav
-  USE fft_base, ONLY : dfftp
+                                 which_irr_so, char_mat_so, name_rap_so, &
+                                 name_class_so, d_spin, name_class_so1,  &
+                                 elem_name_so
+  USE rap_point_group_is, ONLY : nsym_is, sr_is, ft_is, d_spin_is, &
+                                 gname_is, sname_is, code_group_is
+  USE cell_base,          ONLY : at, ibrav
+  USE fft_base,           ONLY : dfftp
   !
   IMPLICIT NONE
   !
   INTEGER, INTENT(IN) :: iverbosity
-  LOGICAL, INTENT(IN) :: noncolin, domag
+  !! verbosity index
+  LOGICAL, INTENT(IN) :: noncolin
+  !! .TRUE. if non-collinear
+  LOGICAL, INTENT(IN) :: domag
+  !! If .TRUE. magnetization is computed
+  !
+  ! ... local variables
   !
   INTEGER :: nclass_ref   ! The number of classes of the point group
   INTEGER :: isym, ipol
@@ -560,10 +559,7 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
                  nsym_is=nsym_is+1
                  sr_is(:,:,nsym_is) = sr(:,:,isym)
                  CALL find_u(sr_is(1,1,nsym_is), d_spin_is(1,1,nsym_is))
-                 ! ftau_is are fractional translations in FFT grid coordinates
-                 ftau_is(1,nsym_is)=NINT(ft(1,isym)*dfftp%nr1)
-                 ftau_is(2,nsym_is)=NINT(ft(2,isym)*dfftp%nr2)
-                 ftau_is(3,nsym_is)=NINT(ft(3,isym)*dfftp%nr3)
+                 ft_is(:,nsym_is)=ft(:,isym)
                  sname_is(nsym_is)=sname(isym)
               ENDIF
            ELSE
@@ -640,3 +636,74 @@ SUBROUTINE print_symmetries ( iverbosity, noncolin, domag )
   END IF
   !
 END SUBROUTINE print_symmetries
+!
+!-----------------------------------------------------------------------
+SUBROUTINE print_cuda_info
+  !-----------------------------------------------------------------------
+  !
+  USE io_global,       ONLY : stdout
+  USE control_flags,   ONLY : use_gpu, iverbosity
+  USE mp_world,        ONLY : nnode, world_comm
+  USE mp,              ONLY : mp_sum, mp_max
+#if defined(__CUDA)
+  USE cudafor
+  !
+  IMPLICIT NONE
+  !
+  INTEGER :: idev, ndev, ierr
+  INTEGER, ALLOCATABLE :: dev_association(:)
+  TYPE (cudaDeviceProp) :: prop
+  !
+  IF (use_gpu) THEN
+     WRITE( stdout, '(/,5X,"GPU acceleration is ACTIVE.",/)' )
+#if defined(__GPU_MPI)
+     WRITE( stdout, '(/10x,"CUDA-aware MPI enabled")')
+#endif
+  ELSE
+     WRITE( stdout, '(/,5X,"GPU acceleration is NOT ACTIVE.",/)' )
+  END IF
+  !
+  ierr = cudaGetDevice( idev )
+  IF (ierr /= 0) CALL errore('summary', 'cannot get device id', ierr)
+  ierr = cudaGetDeviceCount( ndev )
+  IF (ierr /= 0) CALL errore('summary', 'cannot get device count', ierr)
+  !
+  ! User friendly, approximated warning.
+  ! In order to get this done right, one needs an intra_node communicator
+  !
+  CALL mp_max(ndev, world_comm)
+  !
+  ALLOCATE(dev_association(ndev))
+  !
+  dev_association(:) = 0
+  dev_association(idev+1) = 1
+  !
+  CALL mp_sum(dev_association, world_comm)
+  !
+  IF (ANY(dev_association > nnode*2)) &
+     CALL infomsg('print_cuda_info', &
+      'High GPU oversubscription detected. Are you sure this is what you want?')
+  !
+  DEALLOCATE(dev_association)
+  !
+  ! Verbose information for advanced users
+  IF (iverbosity > 0) THEN
+     WRITE( stdout, '(/,5X,"GPU used by master process:",/)' )
+     ! Device info taken from
+     ! https://devblogs.nvidia.com/how-query-device-properties-and-handle-errors-cuda-fortran/
+     ierr = cudaGetDeviceProperties(prop, idev)
+     WRITE(stdout,"(5X,'   Device Number: ',i0)") idev
+     WRITE(stdout,"(5X,'   Device name: ',a)") trim(prop%name)
+     WRITE(stdout,"(5X,'   Compute capability : ',i0, i0)") prop%major, prop%minor
+     WRITE(stdout,"(5X,'   Ratio of single to double precision performance  : ',i0)") prop%singleToDoublePrecisionPerfRatio
+     WRITE(stdout,"(5X,'   Memory Clock Rate (KHz): ', i0)") &
+       prop%memoryClockRate
+     WRITE(stdout,"(5X,'   Memory Bus Width (bits): ', i0)") &
+       prop%memoryBusWidth
+     WRITE(stdout,"(5X,'   Peak Memory Bandwidth (GB/s): ', f6.2)") &
+       2.0*prop%memoryClockRate*(prop%memoryBusWidth/8)/10.0**6
+  END IF
+  !
+#endif
+  !
+END SUBROUTINE print_cuda_info

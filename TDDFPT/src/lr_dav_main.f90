@@ -21,8 +21,6 @@ PROGRAM lr_dav_main
        evc1,n_ipol, d0psi, &
        no_hxc, nbnd_total, &
        revc0, lr_io_level, code1,davidson
-  USE io_files,              ONLY : nd_nmbr
-  USE global_version,        ONLY : version_number
   USE ions_base,             ONLY : tau,nat,atm,ityp
   USE environment,           ONLY : environment_start
   USE mp_global,             ONLY : nimage, mp_startup, inter_bgrp_comm, &
@@ -31,8 +29,7 @@ PROGRAM lr_dav_main
   USE wavefunctions,  ONLY : psic
   USE control_flags,         ONLY : do_makov_payne
   USE check_stop,            ONLY : check_stop_now, check_stop_init
-  USE funct,                 ONLY : dft_is_hybrid
-
+  USE xc_lib,                ONLY : xclib_dft_is
   use lr_dav_routines
   use lr_dav_variables
   use lr_dav_debug
@@ -133,7 +130,7 @@ CONTAINS
 
     USE lr_variables,        ONLY : no_hxc, d0psi_rs
     USE uspp,                ONLY : okvan
-    USE funct,               ONLY : dft_is_hybrid
+    USE xc_lib,              ONLY : xclib_dft_is
     USE martyna_tuckerman,   ONLY : do_comp_mt
 
     IMPLICIT NONE
@@ -158,7 +155,7 @@ CONTAINS
  
     IF (no_hxc)  THEN
        WRITE(stdout,'(5x,"No Hartree/Exchange/Correlation")')
-    ELSEIF (dft_is_hybrid() .AND. .NOT.d0psi_rs) THEN
+    ELSEIF (xclib_dft_is('hybrid') .AND. .NOT.d0psi_rs) THEN
        WRITE(stdout, '(/5x,"Use of exact-exchange enabled. Note the EXX correction to the [H,X]", &
                      & /5x,"commutator is NOT included hence the f-sum rule will be violated.",   &
                      & /5x,"You can try to use the variable d0psi_rs=.true. (see the documentation).")' )

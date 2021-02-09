@@ -6,6 +6,13 @@
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 
+#if defined(__ARM_LIB)
+
+#if defined(_OPENMP) && defined(__FFT_SCALAR_THREAD_SAFE)
+! thread safety guard
+#error ARM_LIB is not compatiable with __FFT_SCALAR_THREAD_SAFE
+#endif
+
 !=----------------------------------------------------------------------=!
     MODULE fft_scalar_arm
 !=----------------------------------------------------------------------=!
@@ -16,8 +23,6 @@
 
        IMPLICIT NONE
        SAVE
-#if defined(__ARM_LIB)
-
        PRIVATE
        PUBLIC :: cft_1z, cft_2xy, cfft3d, cfft3ds
 
@@ -403,7 +408,7 @@ END IF
      IF( isign < 0 ) THEN
        call FFTW_INPLACE_DRV_3D( fw_plan(ip), 1, f(1), 1, 1 )
        tscale = 1.0_DP / DBLE( nx * ny * nz )
-       call ZDSCAL( nx * ny * nz, tscale, f(1), 1)
+       f(1:nx * ny * nz) = f(1:nx * ny * nz) * tscale
 
      ELSE IF( isign > 0 ) THEN
        call FFTW_INPLACE_DRV_3D( bw_plan(ip), 1, f(1), 1, 1 )
@@ -587,7 +592,7 @@ SUBROUTINE cfft3ds (f, nx, ny, nz, ldx, ldy, ldz, howmany, isign, &
            end do
         end do
 
-        call DSCAL (2 * ldx * ldy * nz, 1.0_DP/(nx * ny * nz), f(1), 1)
+        f(1:ldx * ldy * nz) = f(1:ldx * ldy * nz) * (1.0_DP/(nx * ny * nz))
 
      END IF
      RETURN
@@ -633,7 +638,7 @@ SUBROUTINE cfft3ds (f, nx, ny, nz, ldx, ldy, ldz, howmany, isign, &
      END SUBROUTINE init_plan
 
    END SUBROUTINE cfft3ds
-#endif
 !=----------------------------------------------------------------------=!
  END MODULE fft_scalar_arm
 !=----------------------------------------------------------------------=!
+#endif

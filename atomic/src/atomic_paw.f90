@@ -36,7 +36,7 @@ MODULE atomic_paw
   !
   USE kinds,            ONLY: dp
   USE ld1_parameters,   ONLY: nwfsx
-  USE parameters,       ONLY: lmaxx
+  USE upf_params,       ONLY: lmaxx
   USE constants,        ONLY: pi, fpi, e2, eps8
   USE radial_grids,     ONLY: ndmx, radial_grid_type
   USE paw_type,         ONLY: paw_t, nullify_pseudo_paw, allocate_pseudo_paw
@@ -489,7 +489,7 @@ CONTAINS
 !   Outside the PAW spheres augfun should be exactly 0. On some machine
 !   it is equal to zero to machine precision and sometimes it is negative, 
 !   so as to confuse the check for negative charge. So we set it to zero
-!   explicitely.
+!   explicitly.
 !
     DO ns = 1, nbeta
        l1 = pawset_%l(ns)
@@ -770,9 +770,9 @@ CONTAINS
   !
   SUBROUTINE compute_onecenter_energy ( totenergy_, veff_, &
        pawset_, vcharge_, nlcc_, ccharge_, nspin_, iint, vloc, energies_ , unit_)
-    USE funct, ONLY: dft_is_gradient
+    USE xc_lib,       ONLY: xclib_dft_is
     USE radial_grids, ONLY: hartree
-    USE io_global, ONLY : stdout, ionode
+    USE io_global,    ONLY : stdout, ionode
     IMPLICIT NONE
     REAL(dp), INTENT(OUT) :: totenergy_            ! H+XC+DC
     REAL(dp), INTENT(OUT) :: veff_(ndmx,2)         ! effective potential
@@ -855,7 +855,7 @@ CONTAINS
           aux(i)=exc *  rhovtot(i)
        END IF
     END DO
-    IF (dft_is_gradient()) THEN
+    IF (xclib_dft_is('gradient')) THEN
        IF (nlcc_) THEN
           CALL vxcgc(ndmx,pawset_%grid%mesh,nspin_,pawset_%grid%r,&
                      pawset_%grid%r2,vcharge_,ccharge_,vgc,egc, &

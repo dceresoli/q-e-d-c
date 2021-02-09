@@ -18,18 +18,19 @@ SUBROUTINE stres_mgga( sigmaxc )
   USE cell_base,              ONLY : alat, at, bg, omega, tpiba
   USE gvect,                  ONLY : g
   USE scf,                    ONLY : rho, v
-  USE wavefunctions,   ONLY : evc, psic
-  USE funct,                  ONLY : dft_is_meta
+  USE wavefunctions,          ONLY : evc
+  USE xc_lib,                 ONLY : xclib_dft_is
   USE klist,                  ONLY : nks, xk, ngk
   USE buffers,                ONLY : get_buffer
   USE io_files,               ONLY : iunwfc, nwordwfc
-  USE wvfct,                  ONLY : nbnd, npwx, npw, wg 
+  USE wvfct,                  ONLY : nbnd, npwx, wg 
   USE lsda_mod,               ONLY : lsda, nspin, current_spin, isk
   USE fft_interfaces,         ONLY : fwfft, invfft
   USE fft_base,               ONLY : dfftp, dffts
   USE mp,                     ONLY : mp_sum
   USE mp_pools,               ONLY : inter_pool_comm
   USE mp_bands,               ONLY : intra_bgrp_comm
+  USE wavefunctions_gpum,   ONLY : using_evc
   !
   IMPLICIT NONE
   !
@@ -37,13 +38,15 @@ SUBROUTINE stres_mgga( sigmaxc )
   !
   ! Internal variables
   !
-  INTEGER                   :: ix, iy, ir, ipol, iss, incr, ibnd, ik
+  INTEGER                   :: ix, iy, ir, iss, ipol, incr, ibnd, ik, npw
   INTEGER                   :: ipol2xy(3,3) 
+  !! ipol2xy(i,j) = ipol2x(j,i) is a collapsed symmetric index
+  DATA ipol2xy / 1, 2, 3, 2, 4, 5, 3, 5, 6/
   REAL(DP), PARAMETER       :: epsr = 1.0d-6, epsg = 1.0d-10, e2 = 2.d0
   COMPLEX(DP), ALLOCATABLE  :: gradwfc (:,:), crosstaus(:,:,:)
   REAL(DP)                  :: w1, w2, delta, sigma_mgga(3,3)
   !
-  if ( .not. dft_is_meta() ) return
+  if ( .not. xclib_dft_is('meta') ) return
   !
   current_spin=1
   !
@@ -80,6 +83,7 @@ SUBROUTINE stres_mgga( sigmaxc )
     IF ( nks > 1 ) THEN
        !
        CALL get_buffer ( evc, nwordwfc, iunwfc, ik )
+       CALL using_evc(2)
        !
     END IF
     !
@@ -107,15 +111,11 @@ SUBROUTINE stres_mgga( sigmaxc )
        !
        ! Cross terms of kinetic energy density
        !
-       ipol=1
-       !
        do ix=1,3
           !
           do iy=1,ix
              !
-             ipol2xy(ix,iy)=ipol
-             ipol2xy(iy,ix)=ipol
-             !
+             ipol = ipol2xy(iy,ix)
              !
              do ir=1,dffts%nnr
                 !
@@ -124,9 +124,6 @@ SUBROUTINE stres_mgga( sigmaxc )
                                         2.0_DP*w2*AIMAG(gradwfc(ir,ix))*AIMAG(gradwfc(ir,iy))
                 !
              end do
-             !
-             !
-             ipol=ipol+1
              !
           end do
           !
@@ -186,13 +183,14 @@ SUBROUTINE wfc_gradient ( ibnd, ik, npw, gradpsi )
   !
   USE kinds,                  ONLY : DP
   USE control_flags,          ONLY : gamma_only
-  USE wavefunctions,   ONLY : psic, evc
+  USE wavefunctions,          ONLY : psic, evc
   USE wvfct,                  ONLY : npwx, nbnd
   USE cell_base,              ONLY : omega, tpiba
   USE klist,                  ONLY : xk, igk_k
   USE gvect,                  ONLY : g
   USE fft_base,               ONLY : dffts
   USE fft_interfaces,         ONLY : invfft
+  USE wavefunctions_gpum,   ONLY : using_evc
   !
   IMPLICIT NONE 
   !
@@ -203,6 +201,8 @@ SUBROUTINE wfc_gradient ( ibnd, ik, npw, gradpsi )
   !
   REAL(DP)               :: kplusg(npwx)
   INTEGER                :: ipol
+  !
+  CALL using_evc(0)
   !
   ! Compute the gradient of the wavefunction in reciprocal space
   !

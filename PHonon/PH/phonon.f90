@@ -35,16 +35,17 @@ PROGRAM phonon
   !
   ! Not implemented in ph.x:
   ! [6] [5] + constraints on the magnetization
-  ! [7] Tkatchenko-Scheffler, xdm, DFT-D
+  ! [7] Tkatchenko-Scheffler, DFT-D3
   ! [8] Hybrid and meta-GGA functionals
   ! [9] External Electric field
   ! [10] nonperiodic boundary conditions.
 
+  USE control_flags,   ONLY : use_para_diag
   USE control_ph,      ONLY : bands_computed, qplot
   USE check_stop,      ONLY : check_stop_init
   USE ph_restart,      ONLY : ph_writefile
-  USE mp_global,       ONLY : mp_startup
   USE environment,     ONLY : environment_start
+  USE mp_global,       ONLY : mp_startup
   ! YAMBO >
   USE YAMBO,           ONLY : elph_yambo,dvscf_yambo
   ! YAMBO <
@@ -92,6 +93,7 @@ PROGRAM phonon
   ENDIF
   ! YAMBO <
   !
+  IF ( use_para_diag ) CALL laxlib_end()
   CALL stop_smoothly_ph( .TRUE. )
   !
   STOP

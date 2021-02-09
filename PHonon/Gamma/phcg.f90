@@ -413,36 +413,36 @@ END SUBROUTINE cg_eps0dyn
 SUBROUTINE cg_neweps
   !-----------------------------------------------------------------------
   !
+  !!  Recalculate self-consistent potential etc
+  !
   USE constants, ONLY : bohr_radius_angs, fpi
   USE io_global, ONLY : stdout
   USE cell_base, ONLY : omega
   USE ions_base, ONLY : nat, tau
   USE fft_base,  ONLY : dfftp
   USE scf,       ONLY : rho, rho_core
-  USE funct,     ONLY : dmxc
+  USE xc_lib,    ONLY : xclib_set_threshold
   USE cgcom
   !
   IMPLICIT NONE
-
-  INTEGER :: i, j
-  REAL(DP) :: rhotot, chi(3,3)
   !
-  !  recalculate self-consistent potential etc
+  INTEGER :: i, j
+  REAL(DP), DIMENSION(3,3) :: chi(3,3)
+  REAL(DP), DIMENSION(dfftp%nnr,1) ::  rhotot, sign_r
   !
   CALL newscf
   !
   !  new derivative of the xc potential - NOT IMPLEMENTED FOR LSDA
   !
-  dmuxc(:) = 0.d0
-  DO i = 1,dfftp%nnr
-     rhotot = rho%of_r(i,1) + rho_core(i)
-     IF ( rhotot> 1.d-30 ) dmuxc(i)= dmxc( rhotot)
-     IF ( rhotot<-1.d-30 ) dmuxc(i)=-dmxc(-rhotot)
-  ENDDO
+  rhotot(:,1) = rho%of_r(:,1) + rho_core(:)
+  !
+  CALL xclib_set_threshold( 'lda', 1.E-10_DP )
+  CALL dmxc( dfftp%nnr, 1, rhotot, dmuxc )
+  !
   !
   !  re-initialize data needed for gradient corrections
   !
-  CALL cg_setupdgc
+  CALL setup_dgc( )
   !
   !   calculate linear response to macroscopic fields
   !
@@ -484,7 +484,7 @@ SUBROUTINE newscf
   USE wvfct, ONLY: nbnd, nbndx
   USE noncollin_module, ONLY: report
   USE symm_base,     ONLY : nsym
-  USE io_files,      ONLY : iunwfc, input_drho, output_drho, prefix, tmp_dir, postfix
+  USE io_files,      ONLY : iunwfc, prefix, tmp_dir, postfix
   USE ldaU,          ONLY : lda_plus_u
   USE control_flags, ONLY : restart, io_level, lscf, iprint, &
                             david, max_cg_iter, &
@@ -507,8 +507,6 @@ SUBROUTINE newscf
   doublegrid=.false.
   lmovecell=.false.
   iprint=10000
-  input_drho=' '
-  output_drho=' '
   starting_wfc='file'
   report=1
   if ( .not. allocated (btype) ) then

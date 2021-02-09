@@ -7,6 +7,13 @@
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
 
+#if defined(__LINUX_ESSL)
+
+#if defined(_OPENMP) && defined(__FFT_SCALAR_THREAD_SAFE)
+! thread safety guard
+#error ESSL is not compatiable with __FFT_SCALAR_THREAD_SAFE
+#endif
+
 !=----------------------------------------------------------------------=!
    MODULE fft_scalar_essl
 !=----------------------------------------------------------------------=!
@@ -15,10 +22,8 @@
        
        IMPLICIT NONE
        SAVE
-#if defined(__LINUX_ESSL)
-
-        PRIVATE
-        PUBLIC :: cft_1z, cft_2xy, cfft3d, cfft3ds
+       PRIVATE
+       PUBLIC :: cft_1z, cft_2xy, cfft3d, cfft3ds
 
 ! ...   Local Parameter
 
@@ -634,13 +639,12 @@ SUBROUTINE cfft3ds (f, nx, ny, nz, ldx, ldy, ldz, howmany, isign, &
            end do
         end do
 
-        call DSCAL (2 * ldx * ldy * nz, 1.0_DP/(nx * ny * nz), f(1), 1)
+        f(1:ldx * ldy * nz) = f(1:ldx * ldy * nz) * (1.0_DP/(nx * ny * nz))
 
      END IF
      RETURN
    END SUBROUTINE cfft3ds
-#endif
 !=----------------------------------------------------------------------=!
  END MODULE fft_scalar_essl
 !=----------------------------------------------------------------------=!
-
+#endif

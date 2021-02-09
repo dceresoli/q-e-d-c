@@ -38,7 +38,7 @@ SUBROUTINE extract (plot_files,plot_num)
   USE constants, ONLY : rytoev
   USE parameters, ONLY : npk
   USE io_global, ONLY : stdout
-
+  !
   IMPLICIT NONE
   !
   CHARACTER(LEN=256), EXTERNAL :: trimcheck
@@ -50,7 +50,7 @@ SUBROUTINE extract (plot_files,plot_num)
        (/ '  ', '_X', '_Y', '_Z' /)
 
   INTEGER :: kpoint(2), kband(2), spin_component(3), ios
-  LOGICAL :: lsign, needwf
+  LOGICAL :: lsign, needwf, dummy
 
   REAL(DP) :: emin, emax, sample_bias, z, dz
   
@@ -140,16 +140,12 @@ SUBROUTINE extract (plot_files,plot_num)
          ('postproc', 'wrong spin_component', 3)
   ENDIF
   !
-  !   Now allocate space for pwscf variables, read and check them.
+  !   Read xml file, allocate and initialize general variables
+  !   If needed, allocate and initialize wavefunction-related variables
   !
   needwf=(plot_num==3).or.(plot_num==4).or.(plot_num==5).or.(plot_num==7).or. &
          (plot_num==8).or.(plot_num==10)
-  IF ( needwf ) THEN
-     CALL read_file ( )
-     CALL openfil_pp ( )
-  ELSE
-     CALL read_xml_file ( )
-  END IF
+  CALL read_file_new ( needwf )
   !
   IF ( ( two_fermi_energies .or. i_cons /= 0) .and. &
        ( plot_num==3 .or. plot_num==4 .or. plot_num==5 ) ) &

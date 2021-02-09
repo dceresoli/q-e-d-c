@@ -4,31 +4,37 @@
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
-!--------------------------------------
+!----------------------------------------------------------------------------
 MODULE exx_band
-  !--------------------------------------
+  !---------------------------------------------------------------------------
+  !! Variables and subroutines for band parallelization over pairs of bands.
   !
-  ! Variables and subroutines for band parallelization over pairs of bands:
-  ! see T. Barnes, T. Kurth, P. Carrier, N. Wichmann, D. Prendergast,
-  ! P.R.C. Kent, J. Deslippe, Computer Physics Communications 2017,
-  ! dx.doi.org/10.1016/j.cpc.2017.01.008
+  !! See:  
+  !! T. Barnes, T. Kurth, P. Carrier, N. Wichmann, D. Prendergast,
+  !! P.R.C. Kent, J. Deslippe, Comp. Phys. Comm. (2017),  
+  !! dx.doi.org/10.1016/j.cpc.2017.01.008
   !
   USE kinds,                ONLY : DP
   USE noncollin_module,     ONLY : npol
   USE io_global,            ONLY : ionode, stdout
   !
-  USE control_flags,        ONLY : gamma_only
+  USE control_flags,        ONLY : gamma_only, use_gpu
   USE fft_types,            ONLY : fft_type_descriptor
   USE stick_base,           ONLY : sticks_map
   !
   IMPLICIT NONE
+  !
   SAVE
-  !!
+  !
   COMPLEX(DP), ALLOCATABLE :: evc_exx(:,:)
   COMPLEX(DP), ALLOCATABLE :: psi_exx(:,:), hpsi_exx(:,:)
   INTEGER :: lda_original, n_original
   INTEGER :: nwordwfc_exx
   INTEGER, ALLOCATABLE :: igk_exx(:,:)
+  INTEGER, ALLOCATABLE :: igk_exx_d(:,:)
+#if defined(__CUDA)
+  attributes(DEVICE) :: igk_exx_d
+#endif
   !
   ! mapping for the data structure conversion
   !
@@ -73,26 +79,30 @@ MODULE exx_band
  CONTAINS
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE transform_evc_to_exx(type)
-  !-----------------------------------------------------------------------
+  SUBROUTINE transform_evc_to_exx( type )
+    !-----------------------------------------------------------------------
+    !! Transform evc to the EXX data structure.
     !
     USE wvfct,                ONLY : npwx, nbnd
     USE io_files,             ONLY : nwordwfc, iunwfc, iunwfc_exx
     USE klist,                ONLY : nks, ngk, igk_k
     USE uspp,                 ONLY : nkb, vkb
-    USE wavefunctions, ONLY : evc
+    USE wavefunctions,        ONLY : evc
     USE control_flags,        ONLY : io_level
     USE buffers,              ONLY : open_buffer, get_buffer, save_buffer
     USE mp_exx,               ONLY : max_ibands, negrp
-    !
+
+    USE wavefunctions_gpum, ONLY : using_evc
     !
     IMPLICIT NONE
     !
-    INTEGER, intent(in) :: type
+    INTEGER, INTENT(IN) :: type
     INTEGER :: lda, n, ik
     LOGICAL :: exst_mem, exst_file
     !
-    IF (negrp.eq.1) THEN
+    CALL using_evc(0)
+    !
+    IF (negrp == 1) THEN
        !
        ! no change in data structure is necessary
        ! just copy all of the required data
@@ -110,6 +120,10 @@ MODULE exx_band
           ALLOCATE( igk_exx( npwx, nks ) )
           igk_exx = igk_k
        END IF
+       IF(use_gpu .and. ( .not. allocated(igk_exx_d) ) ) THEN
+          ALLOCATE( igk_exx_d, source=igk_exx )
+       END IF
+
        !
        ! get the wfc buffer is used
        !
@@ -123,7 +137,7 @@ MODULE exx_band
     ! change the data structure of evc and igk
     !
     lda = npwx
-    n = npwx 
+    n = npwx
     npwx_local = npwx
     IF( .not.allocated(ngk_local) ) allocate(ngk_local(nks))
     ngk_local = ngk
@@ -141,7 +155,7 @@ MODULE exx_band
     END IF
     !
     lda = npwx
-    n = npwx 
+    n = npwx
     npwx_exx = npwx
     IF( .not.allocated(ngk_exx) ) allocate(ngk_exx(nks))
     ngk_exx = ngk
@@ -164,6 +178,7 @@ MODULE exx_band
        ! read evc for the local data structure
        !
        IF ( nks > 1 ) CALL get_buffer(evc, nwordwfc, iunwfc, ik)
+       IF ( nks > 1 ) CALL using_evc(2)
        !
        ! transform evc to the EXX data structure
        !
@@ -174,23 +189,23 @@ MODULE exx_band
        IF ( nks > 1 ) CALL save_buffer ( evc_exx, nwordwfc_exx, iunwfc_exx, ik )
     END DO
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE transform_evc_to_exx
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE transform_psi_to_exx(lda, n, m, psi)
-  !-----------------------------------------------------------------------
+  SUBROUTINE transform_psi_to_exx( lda, n, m, psi )
+    !-----------------------------------------------------------------------
+    !! Transform psi to EXX data structure.
+    !
     USE wvfct,        ONLY : current_k, npwx, nbnd
     USE mp_exx,       ONLY : negrp, nibands, my_egrp_id, max_ibands
     !
-    !
     IMPLICIT NONE
     !
-    Integer, INTENT(in) :: lda
-    INTEGER, INTENT(in) :: m
-    INTEGER, INTENT(inout) :: n
-    COMPLEX(DP), INTENT(in) :: psi(lda*npol,m) 
+    INTEGER, INTENT(IN) :: lda
+    INTEGER, INTENT(IN) :: m
+    INTEGER, INTENT(INOUT) :: n
+    COMPLEX(DP), INTENT(IN) :: psi(lda*npol,m) 
     !
     ! change to the EXX data strucutre
     !
@@ -223,21 +238,23 @@ MODULE exx_band
     !
     hpsi_exx = 0.d0
     !
-    !-----------------------------------------------------------------------
+    !
   END SUBROUTINE transform_psi_to_exx
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE transform_hpsi_to_local(lda, n, m, hpsi)
-  !-----------------------------------------------------------------------
+  SUBROUTINE transform_hpsi_to_local( lda, n, m, hpsi )
+    !-----------------------------------------------------------------------
+    !! Transform hpsi_exx to the local data structure.
+    !
     USE mp_exx,         ONLY : iexx_istart, iexx_iend, my_egrp_id
     !
     IMPLICIT NONE
     !
-    INTEGER, INTENT(in) :: lda
-    INTEGER, INTENT(in) :: m
-    INTEGER, INTENT(inout) :: n
-    COMPLEX(DP), INTENT(out) :: hpsi(lda_original*npol,m)
+    INTEGER, INTENT(IN) :: lda
+    INTEGER, INTENT(IN) :: m
+    INTEGER, INTENT(INOUT) :: n
+    COMPLEX(DP), INTENT(OUT) :: hpsi(lda_original*npol,m)
     INTEGER :: m_exx
     !
     ! change to the local data structure
@@ -254,27 +271,24 @@ MODULE exx_band
     m_exx = iexx_iend(my_egrp_id+1) - iexx_istart(my_egrp_id+1) + 1
     CALL transform_to_local(m,m_exx,hpsi_exx,hpsi)
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE transform_hpsi_to_local
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE initialize_local_to_exact_map(lda, m)
-  !-----------------------------------------------------------------------
-    !
-    ! determine the mapping between the local and EXX data structures
+  SUBROUTINE initialize_local_to_exact_map( lda, m )
+    !-----------------------------------------------------------------------
+    !! Determine the mapping between the local and EXX data structures.
     !
     USE wvfct,          ONLY : npwx, nbnd
     USE klist,          ONLY : nks, igk_k
     USE mp_exx,         ONLY : nproc_egrp, negrp, my_egrp_id, me_egrp, &
-                               intra_egrp_comm, inter_egrp_comm, &
-                               ibands, nibands, init_index_over_band, &
+                               intra_egrp_comm, inter_egrp_comm,       &
+                               ibands, nibands, init_index_over_band,  &
                                iexx_istart, iexx_iend, max_ibands
     USE mp_pools,       ONLY : nproc_pool, me_pool, intra_pool_comm
     USE mp,             ONLY : mp_sum
     USE gvect,          ONLY : ig_l2g
     USE uspp,           ONLY : nkb
-    !
     !
     IMPLICIT NONE
     !
@@ -359,7 +373,7 @@ MODULE exx_band
     exx_map = 0
     DO ik = 1, nks
        exx_map(prev_lda_exx(ik)+1:prev_lda_exx(ik)+lda_exx(me_egrp+1,ik),ik) = &
-            ig_l2g(igk_exx(1:lda_exx(me_egrp+1,ik),ik))    
+            ig_l2g(igk_exx(1:lda_exx(me_egrp+1,ik),ik))
     END DO
     CALL mp_sum(exx_map,intra_egrp_comm)
     !
@@ -572,7 +586,7 @@ MODULE exx_band
                    comm_recv_reverse(iproc+1,ik)%indices(count) = ig
                 END IF
              END DO
-             
+
           END DO
        END DO
        !
@@ -626,30 +640,29 @@ MODULE exx_band
     DEALLOCATE( l2e_map, e2l_map )
     DEALLOCATE( psi_source, psi_source_exx )
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE initialize_local_to_exact_map
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE transform_to_exx(lda, n, m, m_out, ik, psi, psi_out, type)
-  !-----------------------------------------------------------------------
-    !
-    ! transform psi into the EXX data structure, and place the result in psi_out
+  SUBROUTINE transform_to_exx( lda, n, m, m_out, ik, psi, psi_out, type )
+    !-----------------------------------------------------------------------
+    !! Transform psi into the EXX data structure, and place the result 
+    !! in psi_out.
     !
     USE wvfct,        ONLY : nbnd
     USE mp,           ONLY : mp_sum
     USE mp_pools,     ONLY : nproc_pool, me_pool
-    USE mp_exx,       ONLY : intra_egrp_comm, inter_egrp_comm, &
-         nproc_egrp, me_egrp, negrp, my_egrp_id, nibands, ibands, &
-         max_ibands, all_start, all_end
+    USE mp_exx,       ONLY : intra_egrp_comm, inter_egrp_comm,       &
+                             nproc_egrp, me_egrp, negrp, my_egrp_id, &
+                             nibands, ibands, max_ibands, all_start, &
+                             all_end
     USE parallel_include
-    !
     !
     IMPLICIT NONE
     !
     Integer :: lda
     INTEGER :: n, m, m_out
-    COMPLEX(DP) :: psi(npwx_local*npol,m) 
+    COMPLEX(DP) :: psi(npwx_local*npol,m)
     COMPLEX(DP) :: psi_out(npwx_exx*npol,m_out)
     INTEGER, INTENT(in) :: type
 
@@ -747,7 +760,7 @@ MODULE exx_band
 #endif
           END DO
        END DO
-          
+
     END IF
     !
     IF(type.eq.0)THEN
@@ -773,6 +786,37 @@ MODULE exx_band
     !send communication packets
     !
     DO iproc=0, nproc_egrp-1
+
+      !
+      !prepare receive buffers
+      !
+      IF ( comm_recv(iproc+1,current_ik)%size.gt.0) THEN
+#if defined(__MPI)
+         IF (type.eq.0) THEN !psi or hpsi
+            CALL MPI_IRECV( comm_recv(iproc+1,current_ik)%msg, &
+                 comm_recv(iproc+1,current_ik)%size*npol*nibands(my_egrp_id+1), &
+                 MPI_DOUBLE_COMPLEX, &
+                 iproc, 100+me_egrp*nproc_egrp+iproc, &
+                 intra_egrp_comm, request_recv(iproc+1), ierr )
+         ELSE IF (type.eq.1) THEN !evc
+            CALL MPI_IRECV( comm_recv(iproc+1,current_ik)%msg, &
+                 comm_recv(iproc+1,current_ik)%size*npol*m, MPI_DOUBLE_COMPLEX, &
+                 iproc, 100+me_egrp*nproc_egrp+iproc, &
+                 intra_egrp_comm, request_recv(iproc+1), ierr )
+         ELSE IF (type.eq.2) THEN !evc2
+            CALL MPI_IRECV( comm_recv(iproc+1,current_ik)%msg, &
+                 comm_recv(iproc+1,current_ik)%size*npol*(all_end(my_egrp_id+1)-all_start(my_egrp_id+1)+1), &
+                 MPI_DOUBLE_COMPLEX, &
+                 iproc, 100+me_egrp*nproc_egrp+iproc, &
+                 intra_egrp_comm, request_recv(iproc+1), ierr )
+         END IF
+#endif
+         !
+      END IF
+
+      !
+      !now do the actual sends
+      !
        IF ( comm_send(iproc+1,current_ik)%size.gt.0) THEN
           DO i=1, comm_send(iproc+1,current_ik)%size
              ig = comm_send(iproc+1,current_ik)%indices(i)
@@ -781,7 +825,7 @@ MODULE exx_band
              !
              prev = 0
              DO j=1, nproc_pool
-                IF ((prev+lda_local(j,current_ik)).ge.ig) THEN 
+                IF ((prev+lda_local(j,current_ik)).ge.ig) THEN
                    ig = ig - prev
                    exit
                 END IF
@@ -841,34 +885,7 @@ MODULE exx_band
     !
     ! begin receiving the messages
     !
-    DO iproc=0, nproc_egrp-1
-       IF ( comm_recv(iproc+1,current_ik)%size.gt.0) THEN
-          !
-          ! receive the message
-          !
-#if defined(__MPI)
-          IF (type.eq.0) THEN !psi or hpsi
-             CALL MPI_IRECV( comm_recv(iproc+1,current_ik)%msg, &
-                  comm_recv(iproc+1,current_ik)%size*npol*nibands(my_egrp_id+1), &
-                  MPI_DOUBLE_COMPLEX, &
-                  iproc, 100+me_egrp*nproc_egrp+iproc, &
-                  intra_egrp_comm, request_recv(iproc+1), ierr )
-          ELSE IF (type.eq.1) THEN !evc
-             CALL MPI_IRECV( comm_recv(iproc+1,current_ik)%msg, &
-                  comm_recv(iproc+1,current_ik)%size*npol*m, MPI_DOUBLE_COMPLEX, &
-                  iproc, 100+me_egrp*nproc_egrp+iproc, &
-                  intra_egrp_comm, request_recv(iproc+1), ierr )
-          ELSE IF (type.eq.2) THEN !evc2
-             CALL MPI_IRECV( comm_recv(iproc+1,current_ik)%msg, &
-                  comm_recv(iproc+1,current_ik)%size*npol*(all_end(my_egrp_id+1)-all_start(my_egrp_id+1)+1), &
-                  MPI_DOUBLE_COMPLEX, &
-                  iproc, 100+me_egrp*nproc_egrp+iproc, &
-                  intra_egrp_comm, request_recv(iproc+1), ierr )
-          END IF
-#endif
-          !
-       END IF
-    END DO
+
     !
     ! assign psi_out
     !
@@ -927,23 +944,22 @@ MODULE exx_band
     !
     DEALLOCATE( psi_work, psi_gather )
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE transform_to_exx
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE change_data_structure(is_exx)
-  !-----------------------------------------------------------------------
+  SUBROUTINE change_data_structure( is_exx )
+    !-----------------------------------------------------------------------
+    !! Change between the local and EXX data structures:
     !
-    ! change between the local and EXX data structures
-    ! is_exx = .TRUE. - change to the EXX data structure
-    ! is_exx = .FALSE. - change to the local data strucutre
+    !! * is_exx = .TRUE. - change to the EXX data structure;
+    !! * is_exx = .FALSE. - change to the local data strucutre.
     !
     USE cell_base,      ONLY : at, bg, tpiba2
     USE cellmd,         ONLY : lmovecell
     USE wvfct,          ONLY : npwx
     USE gvect,          ONLY : gcutm, ig_l2g, g, gg, ngm, ngm_g, mill, &
-                               gstart, gvect_init, deallocate_gvect_exx
+                               gstart, gvect_init, deallocate_gvect_exx, gshells
     USE gvecs,          ONLY : gcutms, ngms, ngms_g, gvecs_init
     USE gvecw,          ONLY : gkcut, ecutwfc, gcutw
     USE klist,          ONLY : xk, nks, ngk
@@ -954,6 +970,11 @@ MODULE exx_band
     USE fft_base,       ONLY : dfftp, dffts, smap, fft_base_info
     USE fft_types,      ONLY : fft_type_init
     USE recvec_subs,    ONLY : ggen, ggens
+    !
+    USE command_line_options, ONLY : nmany_
+    !
+    USE gvect_gpum,     ONLY : using_g, using_gg, using_g_d, using_gg_d, &
+                                 using_mill, using_mill_d
     !
     IMPLICIT NONE
     !
@@ -1006,9 +1027,9 @@ MODULE exx_band
 
           CALL fft_type_init( dffts_exx, smap_exx, "wave", gamma_only, &
                lpara, intra_egrp_comm, at, bg, gkcut, gcutms/gkcut, &
-               nyfft=ntask_groups )
+               nyfft=ntask_groups, nmany=nmany_ )
           CALL fft_type_init( dfftp_exx, smap_exx, "rho", gamma_only, &
-               lpara, intra_egrp_comm, at, bg,  gcutm, nyfft=nyfft )
+               lpara, intra_egrp_comm, at, bg,  gcutm, nyfft=nyfft, nmany=nmany_ )
           CALL fft_base_info( ionode, stdout )
           ngs_ = dffts_exx%ngl( dffts_exx%mype + 1 )
           ngm_ = dfftp_exx%ngl( dfftp_exx%mype + 1 )
@@ -1045,6 +1066,15 @@ MODULE exx_band
        CALL ggen ( dfftp, gamma_only, at, bg, gcutm, ngm_g, ngm, &
             g, gg, mill, ig_l2g, gstart )
        CALL ggens( dffts, gamma_only, at, g, gg, mill, gcutms, ngms )
+#if defined(__CUDA)
+       ! Sync duplicated data
+       ! All these variables are actually set by ggen which has intent out
+       CALL using_mill(2); CALL using_mill_d(0); ! updates mill indices,
+       CALL using_g(2);    CALL using_g_d(0);    ! g and gg that are used almost only after
+       CALL using_gg(2);   CALL using_gg_d(0)    ! a single initialization .
+                                                 ! This is a trick to avoid checking for sync everywhere.
+#endif
+       !
        allocate( ig_l2g_exx(ngm), g_exx(3,ngm), gg_exx(ngm) )
        allocate( mill_exx(3,ngm), nl_exx(ngm) )
        allocate( nls_exx(size(dffts%nl)) )
@@ -1070,18 +1100,47 @@ MODULE exx_band
        g = g_exx
        gg = gg_exx
        mill = mill_exx
+#if defined(__CUDA)
+       ! Sync duplicated data
+       ! All these variables are actually set by ggen which has intent out
+       CALL using_mill(2); CALL using_mill_d(0); ! updates mill indices,
+       CALL using_g(2);    CALL using_g_d(0);    ! g and gg that are used almost only after
+       CALL using_gg(2);   CALL using_gg_d(0)    ! a single initialization .
+                                                 ! This is a trick to avoid checking for sync everywhere.
+#endif
        ! workaround: here dfft?%nl* are unallocated
        ! some compilers go on and allocate, some others crash
+#if defined(__CUDA)
+       IF ( .NOT. ALLOCATED(dfftp%nl) ) ALLOCATE (dfftp%nl_d(size(nl_exx)))
+       IF ( .NOT. ALLOCATED(dffts%nl) ) ALLOCATE (dffts%nl_d(size(nls_exx)))
+       IF ( gamma_only .AND. .NOT.ALLOCATED(dfftp%nlm) ) ALLOCATE (dfftp%nlm_d(size(nlm_exx)))
+       IF ( gamma_only .AND. .NOT.ALLOCATED(dffts%nlm) ) ALLOCATE (dffts%nlm_d(size(nlsm_exx)))
+#endif
        IF ( .NOT. ALLOCATED(dfftp%nl) ) ALLOCATE (dfftp%nl(size(nl_exx)))
        IF ( .NOT. ALLOCATED(dffts%nl) ) ALLOCATE (dffts%nl(size(nls_exx)))
        IF ( gamma_only .AND. .NOT.ALLOCATED(dfftp%nlm) ) ALLOCATE (dfftp%nlm(size(nlm_exx)))
        IF ( gamma_only .AND. .NOT.ALLOCATED(dffts%nlm) ) ALLOCATE (dffts%nlm(size(nlsm_exx)))
+#if defined(__CUDA)
+       IF ( .NOT. ALLOCATED(dfftp%nl_d) ) ALLOCATE (dfftp%nl_d(size(nl_exx)))
+       IF ( .NOT. ALLOCATED(dffts%nl_d) ) ALLOCATE (dffts%nl_d(size(nls_exx)))
+       IF ( gamma_only .AND. .NOT.ALLOCATED(dfftp%nlm_d) ) ALLOCATE (dfftp%nlm_d(size(nlm_exx)))
+       IF ( gamma_only .AND. .NOT.ALLOCATED(dffts%nlm_d) ) ALLOCATE (dffts%nlm_d(size(nlsm_exx)))
+#endif
        ! end workaround. FIXME: this part of code must disappear ASAP
        dfftp%nl = nl_exx
        dffts%nl = nls_exx
+       ! workaround: create a helper subroutine to set nl from variables!!!
+#if defined(__CUDA)
+       dfftp%nl_d = dfftp%nl
+       dffts%nl_d = dffts%nl
+#endif
        IF( gamma_only ) THEN
           dfftp%nlm = nlm_exx
           dffts%nlm = nlsm_exx
+#if defined(__CUDA)
+          dfftp%nlm_d = dfftp%nlm
+          dffts%nlm_d = dffts%nlm
+#endif
        ENDIF
        ngm = ngm_exx
        ngm_g = ngm_g_exx
@@ -1093,11 +1152,27 @@ MODULE exx_band
        g = g_loc
        gg = gg_loc
        mill = mill_loc
+#if defined(__CUDA)
+       ! Sync duplicated data
+       ! All these variables are actually set by ggen which has intent out
+       CALL using_mill(2); CALL using_mill_d(0); ! updates mill indices,
+       CALL using_g(2);    CALL using_g_d(0);    ! g and gg that are used almost only after
+       CALL using_gg(2);   CALL using_gg_d(0)    ! a single initialization .
+                                                 ! This is a trick to avoid checking for sync everywhere.
+#endif
        dfftp%nl = nl_loc
        dffts%nl = nls_loc
+#if defined(__CUDA)
+       dfftp%nl_d = dfftp%nl
+       dffts%nl_d = dffts%nl
+#endif
        IF( gamma_only ) THEN
           dfftp%nlm = nlm_loc
           dffts%nlm = nlsm_loc
+#if defined(__CUDA)
+          dfftp%nlm_d = dfftp%nlm
+          dffts%nlm_d = dffts%nlm
+#endif
        END IF
        ngm = ngm_loc
        ngm_g = ngm_g_loc
@@ -1135,26 +1210,28 @@ MODULE exx_band
           !
        END IF
        DEALLOCATE( work_space )
+
+       IF(use_gpu) ALLOCATE(igk_exx_d, source=igk_exx)
+
     END IF
     !
     ! generate ngl and igtongl
     !
     CALL gshells( lmovecell )
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE change_data_structure
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE update_igk(is_exx)
-  !-----------------------------------------------------------------------
+  SUBROUTINE update_igk( is_exx )
+    !-----------------------------------------------------------------------
+    !
     USE cell_base,      ONLY : tpiba2
     USE gvect,          ONLY : ngm, g
     USE gvecw,          ONLY : ecutwfc
     USE wvfct,          ONLY : npwx, current_k
     USE klist,          ONLY : xk, igk_k
     USE mp_exx,         ONLY : negrp
-    !
     !
     IMPLICIT NONE
     !
@@ -1180,13 +1257,13 @@ MODULE exx_band
     !
     DEALLOCATE( work_space )
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE update_igk
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
   SUBROUTINE result_sum (n, m, data)
-  !-----------------------------------------------------------------------
+    !-----------------------------------------------------------------------
+    !
     USE parallel_include
     USE mp_exx,       ONLY : iexx_start, iexx_end, inter_egrp_comm, &
                                intra_egrp_comm, my_egrp_id, negrp, &
@@ -1283,20 +1360,22 @@ MODULE exx_band
     END DO
 #endif
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE result_sum
-  !-----------------------------------------------------------------------
+  !
   !
   !-----------------------------------------------------------------------
-  SUBROUTINE transform_to_local(m, m_exx, psi, psi_out)
-  !-----------------------------------------------------------------------
+  SUBROUTINE transform_to_local( m, m_exx, psi, psi_out )
+    !-----------------------------------------------------------------------
+    !! Transform psi into the local data structure, and place the result 
+    !! in psi_out.
+    !
     USE mp,           ONLY : mp_sum
     USE mp_pools,     ONLY : nproc_pool, me_pool, intra_pool_comm
-    USE mp_exx,       ONLY : intra_egrp_comm, inter_egrp_comm, &
-         nproc_egrp, me_egrp, negrp, my_egrp_id, iexx_istart, iexx_iend
+    USE mp_exx,       ONLY : intra_egrp_comm, inter_egrp_comm,       &
+                             nproc_egrp, me_egrp, negrp, my_egrp_id, &
+                             iexx_istart, iexx_iend
     USE parallel_include
     USE wvfct,        ONLY : current_k
-    !
     !
     IMPLICIT NONE
     !
@@ -1320,6 +1399,35 @@ MODULE exx_band
     prev_lda_exx = sum( lda_exx(1:me_egrp,current_ik) )
     !
     my_bands = iexx_iend(my_egrp_id+1) - iexx_istart(my_egrp_id+1) + 1
+
+    !
+    ! begin with preparing the receive buffers
+    !
+    DO iegrp=1, negrp
+       !
+       IF ( iexx_istart(iegrp).le.0 ) CYCLE
+       !
+       recv_bands = iexx_iend(iegrp) - iexx_istart(iegrp) + 1
+       !
+       DO iproc=0, nproc_egrp-1
+          IF ( comm_recv_reverse(iproc+1,current_ik)%size.gt.0) THEN
+             !
+             !receive the message
+             !
+             tag = 0
+#if defined(__MPI)
+             CALL MPI_IRECV( comm_recv_reverse(iproc+1,current_ik)%msg(:,:,iexx_istart(iegrp)), &
+                  comm_recv_reverse(iproc+1,current_ik)%size*npol*recv_bands, &
+                  MPI_DOUBLE_COMPLEX, &
+                  iproc+(iegrp-1)*nproc_egrp, &
+                  tag, &
+                  intra_pool_comm, request_recv(iproc+1,iegrp), ierr )
+#endif
+             !
+          END IF
+       END DO
+    END DO
+
     !
     ! send communication packets
     !
@@ -1356,33 +1464,7 @@ MODULE exx_band
           END DO
        END DO
     END IF
-    !
-    ! begin receiving the communication packets
-    !
-    DO iegrp=1, negrp
-       !
-       IF ( iexx_istart(iegrp).le.0 ) CYCLE
-       !
-       recv_bands = iexx_iend(iegrp) - iexx_istart(iegrp) + 1
-       !
-       DO iproc=0, nproc_egrp-1
-          IF ( comm_recv_reverse(iproc+1,current_ik)%size.gt.0) THEN
-             !
-             !receive the message
-             !
-             tag = 0
-#if defined(__MPI)
-             CALL MPI_IRECV( comm_recv_reverse(iproc+1,current_ik)%msg(:,:,iexx_istart(iegrp)), &
-                  comm_recv_reverse(iproc+1,current_ik)%size*npol*recv_bands, &
-                  MPI_DOUBLE_COMPLEX, &
-                  iproc+(iegrp-1)*nproc_egrp, &
-                  tag, &
-                  intra_pool_comm, request_recv(iproc+1,iegrp), ierr )
-#endif
-             !
-          END IF
-       END DO
-    END DO
+
     !
     ! assign psi
     !
@@ -1427,9 +1509,7 @@ MODULE exx_band
     END IF
 #endif
     !
-    !-----------------------------------------------------------------------
   END SUBROUTINE transform_to_local
-  !-----------------------------------------------------------------------
 
 END MODULE exx_band
 !-----------------------------------------------------------------------

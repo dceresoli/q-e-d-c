@@ -1,6 +1,6 @@
-# generated automatically by aclocal 1.15.1 -*- Autoconf -*-
+# generated automatically by aclocal 1.16.2 -*- Autoconf -*-
 
-# Copyright (C) 1996-2017 Free Software Foundation, Inc.
+# Copyright (C) 1996-2020 Free Software Foundation, Inc.
 
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -23,13 +23,13 @@ m4_include([m4/x_ac_qe_cuda.m4])
 m4_include([m4/x_ac_qe_default_env.m4])
 m4_include([m4/x_ac_qe_elpa.m4])
 m4_include([m4/x_ac_qe_environ.m4])
-m4_include([m4/x_ac_qe_f77.m4])
 m4_include([m4/x_ac_qe_f90.m4])
 m4_include([m4/x_ac_qe_f90rule.m4])
 m4_include([m4/x_ac_qe_fft.m4])
 m4_include([m4/x_ac_qe_hdf5.m4])
 m4_include([m4/x_ac_qe_lapack.m4])
 m4_include([m4/x_ac_qe_ld.m4])
+m4_include([m4/x_ac_qe_libxc.m4])
 m4_include([m4/x_ac_qe_mass.m4])
 m4_include([m4/x_ac_qe_mpi.m4])
 m4_include([m4/x_ac_qe_mpif90.m4])

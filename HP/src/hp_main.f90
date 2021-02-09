@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2018 Quantum ESPRESSO group
+! Copyright (C) 2001-2020 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -15,9 +15,12 @@ PROGRAM hp_main
   USE io_global,         ONLY : stdout, ionode
   USE check_stop,        ONLY : check_stop_init
   USE mp_global,         ONLY : mp_startup, mp_global_end
+  USE mp_pools,          ONLY : kunit
+  USE mp_bands,          ONLY : inter_bgrp_comm
   USE environment,       ONLY : environment_start, environment_end
   USE ions_base,         ONLY : nat, ityp, atm, tau, amass
   USE io_files,          ONLY : tmp_dir
+  USE control_flags,     ONLY : dfpt_hub, use_para_diag
   USE ldaU_hp,           ONLY : perturbed_atom, start_q, last_q, nqs, code, &
                                 compute_hp, sum_pertq, perturb_only_atom,   &
                                 determine_num_pert_only, tmp_dir_save
@@ -29,12 +32,14 @@ PROGRAM hp_main
   !
   ! Initialize MPI, clocks, print initial messages
   !
-#if defined (__MPI)
   CALL mp_startup()
-#endif
   !
   CALL environment_start(code)
   !
+  ! Inform the PW routines that we are performing the HP calculation
+  !
+  dfpt_hub = .TRUE.
+  ! 
   ! Print the preamble
   !
   CALL hp_print_preamble()
@@ -77,6 +82,7 @@ PROGRAM hp_main
         CALL clean_pw(.true.)
         CALL close_files(.true.)
         tmp_dir=tmp_dir_save
+        kunit=1 ! reinitialize kunit
         CALL read_file()
      ENDIF
      !
@@ -142,7 +148,7 @@ PROGRAM hp_main
         !
         WRITE( stdout, '(/6x,"Not all q points were considered. Stopping smoothly...",/)')   
         CALL hp_dealloc_1()
-        GO TO 103
+        GO TO 104
         !
      ENDIF
      !
@@ -171,7 +177,7 @@ PROGRAM hp_main
      ! If perturb_only_atom(na)=.true., then this is not a full calculation
      ! but a calculation for only one Hubbard atom na. Hence, stop smoothly.
      !
-     IF (perturb_only_atom(na)) GO TO 103
+     IF (perturb_only_atom(na)) GO TO 104
      !
      ! last_q must be recomputed for the next perturbation,
      ! therefore we need to reset it back to -1.
@@ -200,9 +206,11 @@ PROGRAM hp_main
   !
   ! Calculation of Hubbard U (serial post-processing) 
   !
+103 CONTINUE
+  !
   IF (ionode) CALL hp_postproc()
   !
-103 CONTINUE
+104 CONTINUE
   !
   ! Deallocate some arrays
   !
@@ -219,9 +227,8 @@ PROGRAM hp_main
   !
   CALL environment_end(code)
   !
-#if defined (__MPI)
+  IF ( use_para_diag ) CALL laxlib_end() 
   CALL mp_global_end()
-#endif
   !
 3336 FORMAT('     ',69('='))
   !

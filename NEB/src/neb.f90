@@ -17,6 +17,7 @@ PROGRAM neb
   USE mp,                ONLY : mp_bcast
   USE mp_global,         ONLY : mp_startup
   USE mp_world,          ONLY : world_comm, mpime, root
+  USE mp_bands,          ONLY : inter_bgrp_comm
   USE read_input,        ONLY : read_input_file
   USE command_line_options,  ONLY : input_file_
   !
@@ -40,6 +41,7 @@ PROGRAM neb
   !
   !
   CALL mp_startup ( start_images=.true. )
+  !
   CALL environment_start ( 'NEB' )
   !
   ! INPUT RELATED
@@ -87,6 +89,7 @@ PROGRAM neb
     END IF
     CALL engine_to_path_pos(i)
     IF ( i == 1 ) CALL engine_to_path_fix_atom_pos()
+    CALL engine_to_path_tot_charge(i)
     !
   enddo
   !
@@ -104,6 +107,7 @@ PROGRAM neb
   !
   CALL search_mep()
   !
+  CALL laxlib_end()
   CALL stop_run_path( conv_path )
   !
   STOP

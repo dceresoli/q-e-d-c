@@ -34,14 +34,14 @@ SUBROUTINE memory_report()
   USE exx,       ONLY : ecutfock, use_ace
   USE exx_base,  ONLY : nkqs
   USE fft_base,  ONLY : dffts, dfftp
-  USE gvect,     ONLY : ngm, ngl, ngm_g, g, gcutm
+  USE gvect,     ONLY : ngm, ngl, ngm_g, g, ecutrho
   USE gvecs,     ONLY : ngms, doublegrid
   USE gvecw,     ONLY : ecutwfc, gcutw
   USE klist,     ONLY : nks, nkstot, xk, qnorm
   USE cellmd,    ONLY : cell_factor
   USE uspp,      ONLY : nkb, okvan
   USE atom,      ONLY : rgrid
-  USE funct,     ONLY : dft_is_meta, dft_is_hybrid
+  USE xc_lib,    ONLY : xclib_dft_is
   USE ldaU,      ONLY : lda_plus_u, U_projection, nwfcU
   USE fixed_occ, ONLY : one_atom_occupations
   USE wannier_new,ONLY: use_wannier
@@ -53,12 +53,13 @@ SUBROUTINE memory_report()
        lxdm, smallmem, tqr, iverbosity
   USE force_mod, ONLY : lforce, lstres
   USE ions_base, ONLY : nat, ntyp => nsp, ityp
-  USE mp_diag,   ONLY : np_ortho
   USE mp_bands,  ONLY : nproc_bgrp, nbgrp
   USE mp_pools,  ONLY : npool
   USE mp_images, ONLY : nproc_image  
   !
   IMPLICIT NONE
+  !
+  INCLUDE 'laxlib.fh'
   !
   INTEGER, PARAMETER :: MB=1024*1024
   INTEGER, PARAMETER :: GB=1024*MB
@@ -68,12 +69,11 @@ SUBROUTINE memory_report()
   INTEGER :: indm, ijv, roughestimate
   REAL(DP):: mbr, mbx, mby, mbz, dmbx, dmby, dmbz
   !
-  INTEGER, EXTERNAL :: n_plane_waves
-  !
   ! these quantities are real in order to prevent integer overflow
   !
   REAL(dp), PARAMETER :: complex_size=16_dp, real_size=8_dp, int_size=4_dp
   REAL(dp) :: ram, ram_, ram1, ram2, maxram, totram, add
+  INTEGER :: np_ortho(2)
   !
   IF ( gamma_only) THEN
      g_fact = 2  ! use half plane waves or G-vectors
@@ -123,7 +123,7 @@ SUBROUTINE memory_report()
   END IF
   !
   ! hybrid functionals
-  IF ( dft_is_hybrid () ) THEN
+  IF ( xclib_dft_is('hybrid') ) THEN
      ! ngxx_g = estimated global number of G-vectors used in V_x\psi products
      ! nexx_g = estimated global size of the FFT grid used in V_x\psi products
      ! nexx_l = estimated local size of the FFT grid used in V_x\psi products
@@ -160,14 +160,14 @@ SUBROUTINE memory_report()
   !=====================================================================
   ! Nonlocal pseudopotentials V_NL (beta functions), reciprocal space
   !=====================================================================
-  add = complex_size * nkb * npwx_l ! allocate_nlpot.f90:88 vkb
+  add = complex_size * nkb * npwx_l ! allocate_wfc.f90:62 vkb
   IF ( iverbosity > 0 ) WRITE( stdout, 1013 ) 'nlocal pot', add/MB
   ram = ram + add
   ! other (possibly minor) data loads
   lmaxq = 2*lmaxkb+1
   IF (lmaxq > 0) THEN
      ! not accurate if spline_ps .and. cell_factor <= 1.1d0
-     nqxq = int( ( (sqrt(gcutm) + qnorm) / dq + 4) * cell_factor )
+     nqxq = int( ( (sqrt(ecutrho) + qnorm) / dq + 4) * cell_factor )
      ! allocate_nlpot.f90:87 qrad
      add = real_size * nqxq * nbetam*(nbetam+1)/2 * lmaxq * ntyp
      IF ( iverbosity > 0 ) WRITE( stdout, 1013 ) 'qrad', add/MB
@@ -179,7 +179,7 @@ SUBROUTINE memory_report()
   ! Charge density and potentials - see scf_type in scf_mod
   !=====================================================================
   scf_type_size =  (complex_size * ngm + real_size * dfftp%nnr ) * nspin ! scf_mod.f90:94-95
-  IF ( dft_is_meta() .or. lxdm ) scf_type_size =  2 * scf_type_size
+  IF ( xclib_dft_is('meta') .or. lxdm ) scf_type_size =  2 * scf_type_size
   ! rho, v, vnew (allocate_fft.f90:56) 
   add = 3 * scf_type_size
   IF ( iverbosity > 0 ) WRITE( stdout, 1013 ) 'rho,v,vnew', add/MB
@@ -188,7 +188,7 @@ SUBROUTINE memory_report()
   ! vltot, vrs, rho_core, rhog_core, psic, strf, kedtau if needed
   ram =  ram + complex_size * ( dfftp%nnr + ngm *( 1 + ntyp ) ) + &
        real_size * dfftp%nnr*(2+nspin)
-  IF ( dft_is_meta() ) ram = ram + real_size * dfftp%nnr*nspin
+  IF ( xclib_dft_is('meta') ) ram = ram + real_size * dfftp%nnr*nspin
   ! arrays for rho mixing
   IF ( lscf ) THEN
      ! rhoin (electrons.f90:439)
@@ -196,7 +196,7 @@ SUBROUTINE memory_report()
      IF ( iverbosity > 0 ) WRITE( stdout, 1013 ) 'rhoin', DBLE(scf_type_size)/MB
      ! see mix_type in scf_mod
      mix_type_size =  complex_size * ngm * nspin
-     IF ( dft_is_meta() .or. lxdm ) mix_type_size =  2 * mix_type_size
+     IF ( xclib_dft_is('meta') .or. lxdm ) mix_type_size =  2 * mix_type_size
      ! df, dv (if kept in memory)
      IF ( io_level < 2 ) THEN
         add = mix_type_size * 2 * nmix
@@ -264,6 +264,8 @@ SUBROUTINE memory_report()
   ! ram1:  scratch space allocated in iterative diagonalization 
   !        hpsi, spsi, hr and sr matrices, scalar products
   !        nbnd_l is the estimated dimension of distributed matrices
+  !
+  CALL laxlib_getval( np_ortho = np_ortho )
   !
   nbnd_l = nbndx/np_ortho(1)
   ram1 = complex_size/g_fact * ( 3*nbnd_l**2 ) ! hr,sr,vr/hc,sc,vc 
@@ -361,9 +363,9 @@ SUBROUTINE memory_report()
            !                      vg                       ylmk0     qmod
            ram1 = real_size * (ngm*nspin_mag + ngm_l*( lmaxq*lmaxq + 1 ) )
            !                                    qgm      aux1
-           ram1 = ram1 + complex_size * ngm_l * ( maxnij + nat*3 )
+           ram1 = ram1 + complex_size * ngm_l * ( maxnij + 3*maxnab )
            !                           ddeeq
-           ram1 = ram1 + real_size * ( maxnij * nat * 3 * nspin_mag )
+           ram1 = ram1 + real_size * ( maxnij * maxnab * 3 * nspin_mag )
            IF ( iverbosity > 0 ) WRITE( stdout, 1013 ) 'addusforce', ram1/MB
            !
            ram_ = MAX ( ram_, ram1 )
@@ -412,6 +414,10 @@ SUBROUTINE memory_report()
      IF ( totram .lt. GB ) WRITE( stdout, 1012 ) totram/MB, ' MB'
      IF ( totram .ge. GB ) WRITE( stdout, 1012 ) totram/GB, ' GB'
   END IF
+  !
+  ! check: more bands than plane waves? not good
+  !
+  IF ( npwx_g < nbndx ) CALL errore('memory_report','more bands than PWs!',1)
   !
  1010 format (/5x,'Estimated static dynamical RAM per process > ', F10.2, A3)
  1011 format (/5x,'Estimated max dynamical RAM per process > ', F10.2, A3)

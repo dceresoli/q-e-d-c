@@ -8,7 +8,7 @@
 !
 !---------------------------------------------------------------
 subroutine new_potential &
-     (ndm,mesh,grid,zed,vxt,lsd,nlcc,latt,enne,rhoc,rho,tau,vh,vnew,iflag)
+     (ndm,mesh,grid,zed,vxt,lsd,nlcc,latt,enne,rhoc,rho,vh,vnew,iflag)
   !---------------------------------------------------------------
   !   set up the selfconsistent atomic potential 
   !   from the density and the KS wavefunctions
@@ -16,7 +16,7 @@ subroutine new_potential &
   use constants, only: fpi, e2
   use radial_grids, only: radial_grid_type, hartree
   use kinds, only : DP
-  use funct, only : get_iexch, dft_is_meta, dft_is_gradient
+  use xc_lib, only: xclib_get_id, xclib_dft_is
   use ld1inc, only : nwf, vx, vxc, exc, excgga, tau, vtau
   use kli, only : compute_kli_potential
   implicit none
@@ -24,7 +24,7 @@ subroutine new_potential &
   integer, intent(in) :: iflag
   logical :: nlcc, gga, oep, meta, kli_
   integer :: ndm,mesh,lsd,latt,i,is,nu, nspin, ierr
-  real(DP):: rho(ndm,2),tau(ndm,2), vxcp(2),vnew(ndm,2),vxt(ndm),vh(ndm), rhoc(ndm)
+  real(DP):: rho(ndm,2),vxcp(2),vnew(ndm,2),vxt(ndm),vh(ndm), rhoc(ndm)
   real(DP):: zed,enne,rh(2),rhc, excp
   real(DP),allocatable:: vgc(:,:), egc(:), rhotot(:)
 !  real(DP),allocatable:: vx(:,:)
@@ -34,11 +34,11 @@ subroutine new_potential &
 
   if (mesh.ne.grid%mesh) &
        call errore('new_potential','mesh dimension is not as expected',1)
-  gga = dft_is_gradient()
-  meta = dft_is_meta()
+  gga  = xclib_dft_is('gradient')
+  meta = xclib_dft_is('meta')
 
-  oep = get_iexch().eq.4
-  kli_= get_iexch().eq.10
+  oep = xclib_get_id('LDA','EXCH').eq.4
+  kli_= xclib_get_id('LDA','EXCH').eq.10
 
   nspin = 1
   if (lsd.eq.1) nspin = 2
@@ -103,9 +103,9 @@ subroutine new_potential &
           vgc, egc, tau, vtau, iflag)
      do is=1,nspin
         do i=1,mesh
-           vxc(i,is)=vxc(i,is)+vgc(i,is)!!+vtau(i)
-           vnew(i,is)=vnew(i,is)+vgc(i,is)!!+vtau(i)
-           excgga(i) =egc(i)*fpi*grid%r2(i)
+           vxc(i,is) = vxc(i,is) + vgc(i,is)
+           vnew(i,is) = vnew(i,is) + vgc(i,is)
+           excgga(i) = egc(i)*fpi*grid%r2(i)
         enddo
      enddo
      deallocate(egc)

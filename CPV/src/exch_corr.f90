@@ -14,7 +14,7 @@
 ! calculate exch-corr potential, energy, and derivatives dxc(i,j)
 ! of e(xc) with respect to to cell parameter h(i,j)
 !     
-      use funct,           only : dft_is_gradient, dft_is_meta
+      use xc_lib,          only : xclib_dft_is
       use fft_base,        only : dfftp, dffts
       use cell_base,       only : ainv, omega, h
       use ions_base,       only : nsp
@@ -23,7 +23,7 @@
       use gvect,           only : g
       use uspp,            only : nlcc_any
       use mp,              only : mp_sum
-      use metagga,         ONLY : kedtaur
+      use metagga_cp,      ONLY : kedtaur
       USE io_global,       ONLY : stdout
       USE mp_global,       ONLY : intra_bgrp_comm
       use kinds,           ONLY : DP
@@ -63,10 +63,12 @@
       complex(DP), ALLOCATABLE :: self_rhog( :,: )
       LOGICAL  :: ttsic
       real(DP) :: detmp(3,3)
+
+      CALL start_clock( 'exch_corr' )
       !
       !     filling of gradr with the gradient of rho using fft's
       !
-      if ( dft_is_gradient() ) then
+      if ( xclib_dft_is('gradient') ) then
          !
          allocate( gradr( 3, dfftp%nnr, nspin ) )
          do iss = 1, nspin
@@ -84,7 +86,7 @@
       !
       IF ( ttsic ) THEN
          !
-         IF ( dft_is_meta() ) CALL errore ('exch_corr_h', &
+         IF ( xclib_dft_is('meta') ) CALL errore ('exch_corr_h', &
                                'SIC and meta-GGA not together', 1)
          IF ( tpre ) CALL errore( 'exch_corr_h', 'SIC and stress not implemented', 1)
 
@@ -94,7 +96,7 @@
          ALLOCATE( self_rhog(dfftp%ngm, nspin ) )
 
          self_rho(:, :) = rhor( :, :)
-         IF( dft_is_gradient() ) THEN
+         IF( xclib_dft_is('gradient') ) THEN
             ALLOCATE( self_gradr( 3, dfftp%nnr, nspin ) )
             self_gradr(:, :, :) = gradr(:, :, :)
          ENDIF
@@ -104,7 +106,7 @@
 !
       self_exc = 0.d0
 !
-      if( dft_is_meta() ) then
+      if( xclib_dft_is('meta') ) then
          !
          call tpssmeta( dfftp%nnr, nspin, gradr, rhor, kedtaur, exc )
          !
@@ -174,7 +176,7 @@
          !
       end if
       !
-      if (dft_is_gradient()) then
+      if (xclib_dft_is('gradient')) then
          !
          !  Add second part of the xc-potential to rhor
          !  Compute contribution to the stress dexc
@@ -194,7 +196,7 @@
 
       IF( ttsic ) THEN
 !
-         IF (dft_is_gradient()) then
+         IF (xclib_dft_is('gradient')) then
       
             call gradh( nspin, self_gradr, self_rhog, self_rho, dexc)
           
@@ -245,6 +247,8 @@
       !
 
       IF( ALLOCATED( gradr ) ) DEALLOCATE( gradr )
+
+      CALL stop_clock( 'exch_corr' )
 
 5555  format(1x,f12.5,1x,f12.5,1x,f12.5/                                &
      &       1x,f12.5,1x,f12.5,1x,f12.5/                                &
@@ -362,93 +366,91 @@
 
 !=----------------------------------------------------------------------------=!
 !
-!  This wrapper interface CP/FPMD to the PW xc and gga functionals
-!
-!  tested with PP/xctest.f90 code
+!  For CP we need a further small interface subroutine
 !
 !=----------------------------------------------------------------------------=!
 
-subroutine exch_corr_wrapper(nnr, nspin, grhor, rhor, etxc, v, h)
-  use kinds, only: DP
-  use funct, only: dft_is_gradient, get_igcc, &
-                   xc, xc_spin, gcxc, gcx_spin, gcc_spin, gcc_spin_more
+subroutine exch_corr_cp(nnr,nspin,grhor,rhor,etxc)
+  use kinds,  only: DP
+  use xc_lib, only: xclib_dft_is, xclib_get_id, xclib_set_threshold, xc_gcx
   implicit none
   integer, intent(in) :: nnr
   integer, intent(in) :: nspin
-  real(DP), intent(in) :: grhor( 3, nnr, nspin )
-  real(DP) :: h( nnr, nspin, nspin )
-  real(DP), intent(in) :: rhor( nnr, nspin )
-  real(DP) :: v( nnr, nspin )
+  real(DP) :: grhor( 3, nnr, nspin )
+  real(DP) :: rhor( nnr, nspin )
   real(DP) :: etxc
-  integer :: ir, is, k
-  real(DP) :: rup, rdw, ex, ec, vx(2), vc(2)
-  real(DP) :: rh, grh2, zeta 
-  real(DP) :: sx, sc, v1x, v2x, v1c, v2c
-  real(DP) :: rhox, arhox, e2
-  real(DP) :: grho2(2), arho, segno
-  real(DP) :: v1xup, v1xdw, v2xup, v2xdw
-  real(DP) :: v1cup, v1cdw
-  real(DP) :: grhoup, grhodw, grhoud
-  real(DP) :: v2cup, v2cdw, v2cud
-  integer :: neg(3)
-  real(DP), parameter :: epsr = 1.0d-10, epsg = 1.0d-10
+
+  real(DP), parameter :: epsr = 1.0d-10
+  real(DP), parameter :: e2=1.0_dp
+  integer :: ir, is, k, ipol, neg(3)
+  real(DP) ::  grup, grdw
+  real(DP), allocatable :: v(:,:)
+  real(DP), allocatable :: h(:,:,:)
+  real(DP), allocatable :: rhox (:,:)!^
+  real(DP), allocatable :: ex(:), ec(:)
+  real(DP), allocatable :: vx(:,:), vc(:,:)
+  REAL(DP), allocatable :: sx(:), sc(:)
+  REAL(DP), allocatable :: v1x(:,:), v2x(:,:), v1c(:,:), v2c(:,:)
+  real(dp), allocatable :: v2c_ud(:)
+  real(dp) :: zetas
+  !
   logical :: debug_xc = .false.
   logical :: igcc_is_lyp
-
-  igcc_is_lyp = (get_igcc() == 3)
   !
-  e2  = 1.0d0
+  allocate( v( nnr, nspin ) )
+  if( xclib_dft_is('gradient') ) then
+    allocate( h( nnr, nspin, nspin ) )
+  else
+    allocate( h( 1, 1, 1 ) )
+  endif
+  !
+  igcc_is_lyp = (xclib_get_id('GGA','CORR') == 3)
+  !
   etxc = 0.0d0
-  if( nspin == 1 ) then
+  !
+  allocate ( ex(nnr), ec(nnr), vx(nnr,nspin), vc(nnr,nspin) )
+  IF ( nspin == 1 ) THEN
      !
      ! spin-unpolarized case
      !
-!$omp parallel do private( rhox, arhox, ex, ec, vx, vc ), reduction(+:etxc)
-     do ir = 1, nnr
-        rhox = rhor (ir, nspin)
-        arhox = abs (rhox)
-        if (arhox.gt.1.d-30) then
-           CALL xc( arhox, ex, ec, vx(1), vc(1) )
-           v(ir,nspin) = e2 * (vx(1) + vc(1) )
-           etxc = etxc + e2 * (ex + ec) * rhox
-        else
-           v(ir,nspin) = 0.0D0
-        endif
-     enddo
-!$omp end parallel do
+     CALL xc( nnr, nspin, nspin, rhor, ex, ec, vx, vc )
      !
-  else
+     v(:,nspin) = e2 * (vx(:,1) + vc(:,1) )
+     etxc = e2 * SUM( (ex + ec)*rhor(:,nspin) )
+     !
+  ELSE
      !
      ! spin-polarized case
      !
-     neg (1) = 0
-     neg (2) = 0
-     neg (3) = 0
-     do ir = 1, nnr
-        rhox = rhor(ir,1) + rhor(ir,2)
-        arhox = abs(rhox)
-        if (arhox.gt.1.d-30) then
-           zeta = ( rhor(ir,1) - rhor(ir,2) ) / arhox
-           if (abs(zeta) .gt.1.d0) then
-              neg(3) = neg(3) + 1
-              zeta = sign(1.d0,zeta)
-           endif
-           ! WRITE(6,*) rhox, zeta
-           if (rhor(ir,1) < 0.d0) neg(1) = neg(1) + 1
-           if (rhor(ir,2) < 0.d0) neg(2) = neg(2) + 1
-           call xc_spin (arhox, zeta, ex, ec, vx(1), vx(2), vc(1), vc(2) )
-           do is = 1, nspin
-              v(ir,is) = e2 * (vx(is) + vc(is) )
-           enddo
-           etxc = etxc + e2 * (ex + ec) * rhox
-        else
-           do is = 1, nspin
-              v(ir,is) = 0.0D0
-           end do
-        endif
-     enddo
-  endif
-
+     neg(1) = 0
+     neg(2) = 0
+     neg(3) = 0
+     !
+     allocate ( rhox(nnr,2) ) !^
+     rhox(:,1) = rhor(:,1) + rhor(:,2)
+     rhox(:,2) = rhor(:,1) - rhor(:,2)
+     !
+     CALL xc( nnr, 2, 2, rhox, ex, ec, vx, vc )
+     !
+     DO ir = 1, nnr
+        !
+        DO is = 1, nspin
+           v(ir,is) = e2 * (vx(ir,is) + vc(ir,is))
+        ENDDO
+        etxc = etxc + e2 * (ex(ir) + ec(ir)) * rhox(ir,1)
+        !
+        zetas =  rhox(ir,2) / rhox(ir,1)
+        IF (rhor(ir,1) < 0.d0) neg(1) = neg(1) + 1
+        IF (rhor(ir,2) < 0.d0) neg(2) = neg(2) + 1
+        IF (ABS(zetas) > 1.d0) neg(3) = neg(3) + 1
+        !
+     ENDDO
+     !
+     deallocate ( rhox ) !^
+     !
+  ENDIF
+  deallocate ( vc, vx, ec, ex )
+  !
   if( debug_xc ) then
     open(unit=17,form='unformatted')
     write(17) nnr, nspin
@@ -457,170 +459,85 @@ subroutine exch_corr_wrapper(nnr, nspin, grhor, rhor, etxc, v, h)
     close(17)
     debug_xc = .false.
   end if
-
-  ! now come the corrections
-
-  if( dft_is_gradient() ) then
-
+  !
+  ! gradient corrections
+  !
+  if ( xclib_dft_is('gradient') ) then
+    !
+    call xclib_set_threshold( 'gga', epsr )
+    !
+    allocate ( sx(nnr), sc(nnr), v1x(nnr,nspin), v1c(nnr,nspin), &
+               v2x(nnr,nspin), v2c(nnr,nspin) )
     if (nspin == 1) then
        !
-       !    This is the spin-unpolarised case
+       ! ... This is the spin-unpolarised case
        !
-!$omp parallel do &
-!$omp private( is, grho2, arho, segno, sx, sc, v1x, v2x, v1c, v2c  ), reduction(+:etxc)
+       call xc_gcx( nnr, nspin, rhor, grhor, sx, sc, v1x, v2x, v1c, v2c )
+       !
        do k = 1, nnr
-          !
-          grho2 (1) = grhor(1, k, 1)**2 + grhor(2, k, 1)**2 + grhor(3, k, 1)**2
-          arho = abs (rhor (k, 1) )
-          segno = sign (1.d0, rhor (k, 1) )
-          if (arho > epsr .and. grho2 (1) > epsg) then
-
-             call gcxc (arho, grho2(1), sx, sc, v1x, v2x, v1c, v2c)
-             !
-             ! first term of the gradient correction : D(rho*Exc)/D(rho)
-
-             v (k, 1) = v (k, 1) + e2 * (v1x + v1c)
-
-             ! HERE h contains D(rho*Exc)/D(|grad rho|) / |grad rho|
-             !
-             h (k, 1, 1) = e2 * (v2x + v2c) 
-             etxc = etxc + e2 * (sx + sc) * segno
-
-          else
-             h (k, 1, 1) = 0.d0
-          endif
-          !
-       end do
-!$omp end parallel do
+          ! first term of the gradient correction: D(rho*Exc)/D(rho)
+          v(k,1) = v(k,1) + e2 * (v1x(k,1) + v1c(k,1))
+          ! HERE h contains D(rho*Exc)/D(|grad rho|) / |grad rho|
+          h(k, 1, 1) = e2 * (v2x(k,1) + v2c(k,1))
+          etxc = etxc + e2 * (sx(k) + sc(k))
+       enddo
        !
     else
        !
-       !    spin-polarised case
+       ! ... Spin-polarised case
        !
-       do k = 1, nnr
-          do is = 1, nspin
-             grho2 (is) = grhor(1, k, is)**2 + grhor(2, k, is)**2 + grhor(3, k, is)**2
-          enddo
-          rup = rhor (k, 1)
-          rdw = rhor (k, 2)
-          call gcx_spin ( rup, rdw, grho2 (1), grho2 (2), sx, v1xup, v1xdw, v2xup, v2xdw)
-          !
-          rh = rhor (k, 1) + rhor (k, 2)
-          !
-          if (rh.gt.epsr) then
-             if( igcc_is_lyp ) then
-                grhoup = grhor(1,k,1)**2 + grhor(2,k,1)**2 + grhor(3,k,1)**2
-                grhodw = grhor(1,k,2)**2 + grhor(2,k,2)**2 + grhor(3,k,2)**2
-                grhoud =          grhor(1,k,1)* grhor(1,k,2)
-                grhoud = grhoud + grhor(2,k,1)* grhor(2,k,2)
-                grhoud = grhoud + grhor(3,k,1)* grhor(3,k,2)
-                call gcc_spin_more(rup, rdw, grhoup, grhodw, grhoud, sc, &
-                     v1cup, v1cdw, v2cup, v2cdw, v2cud)
-             else
-                zeta = (rhor (k, 1) - rhor (k, 2) ) / rh
-                !
-                grh2 = (grhor (1, k, 1) + grhor (1, k, 2) ) **2 + &
-                       (grhor (2, k, 1) + grhor (2, k, 2) ) **2 + &
-                       (grhor (3, k, 1) + grhor (3, k, 2) ) **2
-                call gcc_spin (rh, zeta, grh2, sc, v1cup, v1cdw, v2c)
-                v2cup = v2c
-                v2cdw = v2c
-                v2cud = v2c
-             end if
-          else
-             sc = 0.d0
-             v1cup = 0.d0
-             v1cdw = 0.d0
-             v2c = 0.d0
-             v2cup = 0.0d0
-             v2cdw = 0.0d0
-             v2cud = 0.0d0
-          endif
-          !
-          ! first term of the gradient correction : D(rho*Exc)/D(rho)
-          !
-          v (k, 1) = v (k, 1) + e2 * (v1xup + v1cup)
-          v (k, 2) = v (k, 2) + e2 * (v1xdw + v1cdw)
-          !
-          ! HERE h contains D(rho*Exc)/D(|grad rho|) / |grad rho|
-          !
-          h (k, 1, 1) = e2 * (v2xup + v2cup)  ! Spin UP-UP
-          h (k, 1, 2) = e2 *          v2cud   ! Spin UP-DW
-          h (k, 2, 1) = e2 *          v2cud   ! Spin DW-UP
-          h (k, 2, 2) = e2 * (v2xdw + v2cdw)  ! Spin DW-DW
-          !
-          etxc = etxc + e2 * (sx + sc)
-          !
-          !
-       enddo
+       allocate (v2c_ud(nnr))
+       call xc_gcx( nnr, 2, rhor, grhor, sx, sc, v1x, v2x, v1c, v2c, v2c_ud )
        !
+       ! first term of the gradient correction : D(rho*Exc)/D(rho)
+       !
+       v = v + e2*( v1x + v1c )
+       !
+       ! HERE h contains D(rho*Exc)/D(|grad rho|) / |grad rho|
+       !
+       h(:,1,1) = e2 * (v2x(:,1) + v2c(:,1))  ! Spin UP-UP
+       h(:,1,2) = e2 * v2c_ud(:)              ! Spin UP-DW
+       h(:,2,1) = e2 * v2c_ud(:)              ! Spin DW-UP
+       h(:,2,2) = e2 * (v2x(:,2) + v2c(:,2))  ! Spin DW-DW
+       !
+       etxc = etxc + e2 * SUM( sx(:)+sc(:) )
+       !
+       deallocate (v2c_ud)
     endif
     !
+    deallocate ( v2c, v2x, v1c, v1x, sc, sx )
   end if
 
-  return
-end subroutine exch_corr_wrapper
-
-
-!=----------------------------------------------------------------------------=!
-!
-!  For CP we need a further small interface subroutine
-!
-!=----------------------------------------------------------------------------=!
-
-subroutine exch_corr_cp(nnr,nspin,grhor,rhor,etxc)
-  use kinds, only: DP
-  use funct, only: dft_is_gradient
-  implicit none
-  integer, intent(in) :: nnr
-  integer, intent(in) :: nspin
-  real(DP) :: grhor( 3, nnr, nspin )
-  real(DP) :: rhor( nnr, nspin )
-  real(DP) :: etxc
-  integer :: k, ipol
-  real(DP) ::  grup, grdw
-  real(DP), allocatable :: v(:,:)
-  real(DP), allocatable :: h(:,:,:)
-  !
-  allocate( v( nnr, nspin ) )
-  if( dft_is_gradient() ) then
-    allocate( h( nnr, nspin, nspin ) )
-  else
-    allocate( h( 1, 1, 1 ) )
-  endif
-  !
-  call exch_corr_wrapper(nnr,nspin,grhor,rhor,etxc,v,h)
-
-  if( dft_is_gradient() ) then
+  if( xclib_dft_is('gradient') ) then
      !
      if( nspin == 1 ) then
         !
         ! h contains D(rho*Exc)/D(|grad rho|) * (grad rho) / |grad rho|
         !
 !$omp parallel default(none), shared(nnr,grhor,h), private(ipol,k)
+!$omp do collapse(2)
         do ipol = 1, 3
-!$omp do
            do k = 1, nnr
               grhor (ipol, k, 1) = h (k, 1, 1) * grhor (ipol, k, 1)
            enddo
-!$omp end do
         end do
+!$omp end do
 !$omp end parallel
         !
         !
      else
         !
 !$omp parallel default(none), shared(nnr,grhor,h), private(ipol,k,grup,grdw)
+!$omp do collapse(2)
         do ipol = 1, 3
-!$omp do
            do k = 1, nnr
              grup = grhor (ipol, k, 1)
              grdw = grhor (ipol, k, 2)
              grhor (ipol, k, 1) = h (k, 1, 1) * grup + h (k, 1, 2) * grdw
              grhor (ipol, k, 2) = h (k, 2, 2) * grdw + h (k, 2, 1) * grup
            enddo
-!$omp end do
         enddo
+!$omp end do
 !$omp end parallel
         !
      end if

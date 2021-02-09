@@ -23,7 +23,7 @@ SUBROUTINE bcast_lr_input
   USE mp_global,           ONLY: intra_image_comm
   USE mp_world,            ONLY: world_comm
   USE qpoint,              ONLY: xq
-  USE control_lr,          ONLY: lrpa
+  USE control_lr,          ONLY: lrpa, alpha_mix, ethr_nscf
 
   IMPLICIT NONE
   !
@@ -56,6 +56,7 @@ SUBROUTINE bcast_lr_input
   CALL mp_bcast (d0psi_rs, ionode_id,world_comm )
   CALL mp_bcast (lshift_d0psi, ionode_id,world_comm )
   CALL mp_bcast (tddfpt, ionode_id, world_comm )
+  CALL mp_bcast (ethr_nscf, ionode_id, world_comm )
   CALL plugin_arguments_bcast(ionode_id, world_comm)
 
   ! for EELS
@@ -66,6 +67,11 @@ SUBROUTINE bcast_lr_input
   call mp_bcast (xq, ionode_id, world_comm )
   call mp_bcast (approximation, ionode_id, world_comm ) 
   call mp_bcast (lrpa, ionode_id, world_comm ) 
+  call mp_bcast (calculator, ionode_id, world_comm )
+  call mp_bcast (alpha_mix, ionode_id, world_comm )
+  call mp_bcast (increment, ionode_id, world_comm )
+  call mp_bcast (units, ionode_id, world_comm )
+  call mp_bcast (end, ionode_id, world_comm )
 
   ! for lr_dav
   CALL mp_bcast (davidson, ionode_id, world_comm )

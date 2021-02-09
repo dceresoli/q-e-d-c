@@ -28,7 +28,7 @@ PROGRAM manycp
   USE environment,       ONLY : environment_start, environment_end
   USE io_global,         ONLY : ionode, ionode_id, stdout
   USE mp_global,         ONLY : mp_startup
-  USE mp_images,         ONLY : my_image_id
+  USE mp_images,         ONLY : intra_image_comm, my_image_id
   USE read_input,        ONLY : read_input_file
   USE check_stop,        ONLY : check_stop_init
   USE command_line_options, ONLY: input_file_
@@ -36,13 +36,14 @@ PROGRAM manycp
   IMPLICIT NONE
   !
   INTEGER :: i
-  LOGICAL :: opnd
+  LOGICAL :: opnd, diag_in_band_group = .true.
   CHARACTER(LEN=256) :: filin, filout
   CHARACTER(LEN=7) :: image_label
   CHARACTER(LEN=6), EXTERNAL :: int_to_char
   !
   !
   CALL mp_startup ( start_images=.true. )
+  !
   CALL environment_start ( 'MANYCP' )
   !
   ! ... Image-specific input files
@@ -100,9 +101,7 @@ PROGRAM manycp
   !
   CALL cpr_loop( 1 )
   !
-  CALL stop_run(  )
-  CALL do_stop( .TRUE. )
-  !
-  STOP
+  CALL laxlib_end ()
+  CALL stop_cp_run(  )
   !
 END PROGRAM manycp

@@ -18,7 +18,6 @@ SUBROUTINE cg_setup
   USE uspp_param, ONLY: upf
   USE wavefunctions,  ONLY: evc
   USE io_files,   ONLY: prefix, iunpun, iunres, diropn
-  USE funct,      ONLY: dft_is_gradient, dmxc
   USE dfunct,     ONLY: newd
   USE fft_base,   ONLY: dfftp
   USE gvect,      ONLY: g, ngm, eigts1, eigts2, eigts3
@@ -28,16 +27,18 @@ SUBROUTINE cg_setup
   USE vlocal,     ONLY: strf
   USE wvfct,      ONLY: nbnd, npwx
   USE gvecw,      ONLY: gcutw
-  USE cgcom
+  USE gc_lr,  ONLY:  grho, dvxc_rr, dvxc_sr, dvxc_ss, dvxc_s
+  USE cgcom,  ONLY: dmuxc, dvpsi, dpsi, auxr, aux2, aux3, lrwfc
+  USE xc_lib, ONLY: xclib_set_threshold, xclib_dft_is
   !
   IMPLICIT NONE
   !
   INTEGER :: i, l, nt, ik
   LOGICAL :: exst
   CHARACTER (len=256) :: filint
-  REAL(DP) :: rhotot
-  INTEGER       :: ndr, ierr
+  INTEGER  :: ndr, ierr
   REAL(DP) :: edum(1,1), wdum(1,1)
+  REAL(DP), DIMENSION(dfftp%nnr,1) :: rhotot
   !
   CALL start_clock('cg_setup')
   !
@@ -47,7 +48,7 @@ SUBROUTINE cg_setup
   !
   !  allocate memory for various arrays
   !
-  ALLOCATE  (dmuxc( dfftp%nnr))
+  ALLOCATE  (dmuxc( dfftp%nnr,1,1))
   ALLOCATE  (dvpsi( npwx, nbnd))
   ALLOCATE  ( dpsi( npwx, nbnd))
   ALLOCATE  ( auxr( dfftp%nnr))
@@ -56,7 +57,7 @@ SUBROUTINE cg_setup
   !
   !  allocate memory for gradient corrections (if needed)
   !
-  IF ( dft_is_gradient() ) THEN
+  IF ( xclib_dft_is('gradient') ) THEN
      ALLOCATE  ( dvxc_rr(dfftp%nnr,nspin,nspin))
      ALLOCATE  ( dvxc_sr(dfftp%nnr,nspin,nspin))
      ALLOCATE  ( dvxc_ss(dfftp%nnr,nspin,nspin))
@@ -64,37 +65,19 @@ SUBROUTINE cg_setup
      ALLOCATE  ( grho   (3, dfftp%nnr, nspin))
   ENDIF
   !
-  !
-  !  initialize structure factor array
-  !
-  CALL struc_fact ( nat, tau, ntyp, ityp, ngm, g, bg,               &
-       &                  dfftp%nr1, dfftp%nr2, dfftp%nr3, strf, eigts1, eigts2, eigts3 )
-  !
   !  compute drhocore/dtau for each atom type (if needed)
   !
   nlcc_any = any  ( upf(1:ntyp)%nlcc )
-  !!! if (nlcc_any) call set_drhoc(xq, drc)
+  ! ! ! if (nlcc_any) call set_drhoc(xq, drc)
   !
-  !  local potential
+  rhotot(:,1) = rho%of_r(:,1) + rho_core(:)
   !
-  CALL init_vloc
-  !
-  CALL init_us_1
-  !
-  CALL newd
-  !
-  !  derivative of the xc potential - NOT IMPLEMENTED FOR LSDA
-  !
-  dmuxc(:) = 0.d0
-  DO i = 1,dfftp%nnr
-     rhotot = rho%of_r(i,1) + rho_core(i)
-     IF ( rhotot> 1.d-30 ) dmuxc(i)= dmxc( rhotot)
-     IF ( rhotot<-1.d-30 ) dmuxc(i)=-dmxc(-rhotot)
-  ENDDO
+  CALL xclib_set_threshold( 'lda', 1.E-10_DP )
+  CALL dmxc( dfftp%nnr, 1, rhotot, dmuxc )
   !
   !  initialize data needed for gradient corrections
   !
-  CALL cg_setupdgc
+  CALL setup_dgc( ) 
   !
   iunres=88
   !

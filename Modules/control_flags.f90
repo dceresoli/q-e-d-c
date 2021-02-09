@@ -39,7 +39,7 @@ MODULE control_flags
             tnosee, tnosep, tnoseh, tcp, tcap,                               &
             tconvthrs, tolp, convergence_criteria, tionstep, nstepe,         &
             tscreen, gamma_only, force_pairing, lecrpa, tddfpt, smallmem,    &
-            tfirst, tlast, tprint, trescalee 
+            tfirst, tlast, tprint, trescalee, max_xml_steps, dfpt_hub  
   !
   PUBLIC :: fix_dependencies, check_flags
   PUBLIC :: tksw, trhor, thdyn, trhow
@@ -76,6 +76,8 @@ MODULE control_flags
   LOGICAL :: tscreen       = .FALSE. ! Use screened coulomb potentials for cluster calculations
   LOGICAL :: force_pairing = .FALSE. ! Force pairing
   LOGICAL :: lecrpa        = .FALSE. ! RPA correlation energy request
+  LOGICAL :: dfpt_hub      = .FALSE. ! If .true. perform the SCF calculation of U (and V)
+                                     ! and let PW rotuines to know about this
   LOGICAL :: tddfpt        = .FALSE. ! use TDDFPT specific tweaks when using the Environ plugin
   LOGICAL :: smallmem      = .FALSE. ! the memory per task is small
   !
@@ -97,6 +99,7 @@ MODULE control_flags
   INTEGER :: ndr    = 0 !
   INTEGER :: nomore = 0 !
   INTEGER :: iprint =10 ! print output every iprint step
+  INTEGER  :: max_xml_steps =0 ! max number of dynamics included in xml file if 0 all steps are included. 
   INTEGER :: isave  = 0 ! write restart to ndr unit every isave step
   !
   ! ... .TRUE. if only gamma point is used
@@ -164,8 +167,10 @@ MODULE control_flags
     llondon =.FALSE., & ! if .TRUE. compute Grimme D2 dispersion corrections
     ldftd3 =.FALSE., & ! if .TRUE. compute Grimme D3 dispersion corrections
     ts_vdw  =.FALSE., & ! as above for Tkatchenko-Scheffler disp.corrections
+    mbd_vdw  =.FALSE., &!as above for MBD correction
     lxdm    =.FALSE., & ! if .TRUE. compute XDM dispersion corrections
-    restart =.FALSE.   ! if .TRUE. restart from results of a preceding run
+    lensemb =.FALSE., &! if .TRUE. compute ensemble energies
+    restart =.FALSE. ! if .TRUE. restart from results of a preceding run
   !
   ! ... pw self-consistency
   !
@@ -245,6 +250,12 @@ MODULE control_flags
   LOGICAL, PUBLIC :: &
     do_makov_payne = .FALSE.   ! if .TRUE. makov-payne correction for isolated
                                ! system is used
+  LOGICAL, PUBLIC :: &
+    use_gpu = .FALSE.          ! if .TRUE. selects the accelerated version of the subroutines
+                               ! when available
+  INTEGER, PUBLIC :: &
+    many_fft = 16              ! the size of FFT batches in vloc_psi and
+                               ! sumband. Only use in accelerated subroutines.
   !
   INTEGER  :: ortho_max = 0      ! maximum number of iterations in routine ortho
   REAL(DP) :: ortho_eps = 0.0_DP ! threshold for convergence in routine ortho
@@ -271,6 +282,7 @@ MODULE control_flags
 
   LOGICAL,          PUBLIC :: treinit_gvecs = .FALSE.
 
+  LOGICAL,          PUBLIC :: diagonalize_on_host = .FALSE.
   !
   ! ...  end of module-scope declarations
   !

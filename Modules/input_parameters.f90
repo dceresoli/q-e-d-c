@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2002-2008 Quantum ESPRESSO group
+! Copyright (C) 2002-2020 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -30,7 +30,7 @@ MODULE input_parameters
 !=----------------------------------------------------------------------------=!
   !
   USE kinds,      ONLY : DP
-  USE parameters, ONLY : nsx, lqmax
+  USE parameters, ONLY : nsx, natx, sc_size
   USE wannier_new,ONLY : wannier_data
   !
   IMPLICIT NONE
@@ -100,10 +100,10 @@ MODULE input_parameters
         CHARACTER(len=80) :: calculation = 'none'
           ! Specify the type of the simulation
           ! See below for allowed values
-        CHARACTER(len=80) :: calculation_allowed(14)
+        CHARACTER(len=80) :: calculation_allowed(15)
         DATA calculation_allowed / 'scf', 'nscf', 'relax', 'md', 'cp', &
           'vc-relax', 'vc-md', 'vc-cp', 'bands', 'neb', 'smd', 'cp-wf', &
-          'vc-cp-wf', 'cp-wf-nscf'/
+          'vc-cp-wf', 'cp-wf-nscf', 'ensemble'/
         CHARACTER(len=80) :: verbosity = 'default'
           ! define the verbosity of the code output
         CHARACTER(len=80) :: verbosity_allowed(6)
@@ -121,7 +121,9 @@ MODULE input_parameters
         INTEGER :: iprint = 10
           ! number of steps/scf iterations between successive writings
           ! of relevant physical quantities to standard output
-
+        INTEGER :: max_xml_steps = 0 
+          ! max number of steps between successive appending of an xml step 
+          ! in the xml data file, default 0 means all steps are printed. 
         INTEGER :: isave = 100
           ! number of steps between successive savings of
           ! information needed to restart the run (see "ndr", "ndw")
@@ -246,13 +248,12 @@ MODULE input_parameters
         LOGICAL :: tabps = .false. ! for ab-initio pressure and/or surface
                                    ! calculations
 
-        LOGICAL :: lkpoint_dir = .false. ! obsolete, for compatibility
-
         LOGICAL :: use_wannier = .false. ! use or not Wannier functions
 
         LOGICAL :: lecrpa = .FALSE.
           ! if true symmetry in scf run is neglected for RPA Ec calculation
           ! 
+        LOGICAL :: lfcp = .FALSE.     ! FCP calculation. enabled if .true.
 
         LOGICAL :: tqmmm = .FALSE.    ! QM/MM coupling. enabled if .true.
 
@@ -269,8 +270,6 @@ MODULE input_parameters
           ! if memory = 'large' then QE tries to use (when implemented) algorithms using more memory
           !                     to enhance performance.
 
-        LOGICAL  :: lfcpopt = .FALSE. ! FCP optimisation switch
-        LOGICAL  :: lfcpdyn = .FALSE. ! FCP thermostat enabled if .true.
         !
         ! location of xml input according to xsd schema
         CHARACTER(len=256) :: input_xml_schema_file = ' '
@@ -280,9 +279,9 @@ MODULE input_parameters
           prefix, wfcdir, max_seconds, ekin_conv_thr, etot_conv_thr,      &
           forc_conv_thr, pseudo_dir, disk_io, tefield, dipfield, lberry,  &
           gdir, nppstr, wf_collect, lelfield, nberrycyc, refg,            &
-          tefield2, saverho, tabps, lkpoint_dir, use_wannier, lecrpa,     &
-          tqmmm, vdw_table_name, lorbm, memory, point_label_type,         &
-          lfcpopt, lfcpdyn, input_xml_schema_file, gate                                        
+          tefield2, saverho, tabps, use_wannier, lecrpa,                  &
+          lfcp, tqmmm, vdw_table_name, lorbm, memory, point_label_type,   &
+          input_xml_schema_file, gate
 !
 !=----------------------------------------------------------------------------=!
 !  SYSTEM Namelist Input Parameters
@@ -393,16 +392,26 @@ MODULE input_parameters
           ! ONLY PW
 
         LOGICAL :: lda_plus_u = .false.
-          ! Use DFT+U method - following are the needed parameters
+          ! Use DFT+U(+V) method - following are the needed parameters
         INTEGER :: lda_plus_u_kind = 0
-        INTEGER, PARAMETER :: nspinx=2
+        INTEGER :: lback(nsx) = -1
+        INTEGER :: l1back(nsx) = -1
+        INTEGER, PARAMETER :: nspinx=2, lqmax=7
         REAL(DP) :: starting_ns_eigenvalue(lqmax,nspinx,nsx) = -1.0_DP
         REAL(DP) :: hubbard_u(nsx) = 0.0_DP
+        REAL(DP) :: hubbard_u_back(nsx) = 0.0_DP
+        REAL(DP) :: hubbard_v(natx,natx*(2*sc_size+1)**3,4) = 0.0_DP 
         REAL(DP) :: hubbard_j0(nsx) = 0.0_DP
         REAL(DP) :: hubbard_j(3,nsx) = 0.0_DP
         REAL(DP) :: hubbard_alpha(nsx) = 0.0_DP
+        REAL(DP) :: hubbard_alpha_back(nsx) = 0.0_DP
         REAL(DP) :: hubbard_beta(nsx) = 0.0_DP
         CHARACTER(len=80) :: U_projection_type = 'atomic'
+        CHARACTER(len=80) :: Hubbard_parameters = 'input'
+        LOGICAL :: reserv(nsx) = .FALSE.
+        LOGICAL :: reserv_back(nsx) = .FALSE.
+        LOGICAL :: hub_pot_fix = .FALSE.
+        LOGICAL :: backall(nsx) = .FALSE.
 
         LOGICAL :: la2F = .false.
           ! For electron-phonon calculations
@@ -439,6 +448,7 @@ MODULE input_parameters
         REAL(DP) :: ecutfock = -1.d0
           ! variables used in Lin Lin's ACE and SCDM
         REAL(DP) :: localization_thr = 0.0_dp, scdmden=1.0d0, scdmgrd=1.0d0
+        INTEGER  :: nscdm = 1        
         INTEGER  :: n_proj  = 0
         LOGICAL  :: scdm=.FALSE.
         LOGICAL  :: ace=.TRUE.
@@ -468,7 +478,7 @@ MODULE input_parameters
         REAL(DP) :: fixed_magnetization(3) = 0.0_DP
         REAL(DP) :: angle1(nsx) = 0.0_DP
         REAL(DP) :: angle2(nsx) = 0.0_DP
-        INTEGER  :: report = 1
+        INTEGER  :: report =-1
         LOGICAL  :: no_t_rev = .FALSE.
 
         CHARACTER(len=80) :: constrained_magnetization = 'none'
@@ -508,7 +518,7 @@ MODULE input_parameters
           ! london_s6 = default global scaling parameter for PBE
           ! london_c6 = user specified atomic C6 coefficients
           ! london_rvdw = user specified atomic vdw radii
-        REAL ( DP ) :: london_s6   =   0.75_DP , &
+        REAL ( DP ) :: london_s6   =   0.75_DP ,&
                        london_rcut = 200.00_DP , &
                        london_c6( nsx ) = -1.0_DP, &
                        london_rvdw( nsx ) = -1.0_DP
@@ -522,6 +532,8 @@ MODULE input_parameters
 
         LOGICAL   :: ts_vdw = .false.
           ! OBSOLESCENT: same as vdw_corr='Tkatchenko-Scheffler'
+        LOGICAL   :: mbd_vdw = .false.
+          ! added for consistency with ts_vdw
         LOGICAL :: ts_vdw_isolated = .FALSE.
           ! if .TRUE., TS-vdW correction for isolated system
           ! if .FALSE., TS-vdW correction for periodic system
@@ -563,33 +575,26 @@ MODULE input_parameters
           ! if esm_debug is .TRUE., calculate v_hartree and v_local
           ! for abs(gp)<=esm_debug_gpmax (gp is integer and has tpiba unit)
 
-        REAL(DP) :: fcp_mu         = 0.0_DP
-          ! target Fermi energy
+        LOGICAL :: lgcscf = .FALSE.
+          ! if .TRUE., GC-SCF is used
 
-        REAL(DP) :: fcp_mass       = 10000.0_DP
-          ! mass for the FCP
+        LOGICAL :: gcscf_ignore_mun = .FALSE.
+          ! if .TRUE., ignore the term of -mu * N
 
-        REAL(DP) :: fcp_tempw      = 300.0_DP
-          ! target temperature for the FCP dynamics
+        REAL(DP) :: gcscf_mu = 0.0_DP
+          ! target Fermi energy of GC-SCF (in eV)
 
-        CHARACTER(LEN=8) :: fcp_relax = 'lm'
-          ! 'lm':    line minimisation
-          ! 'mdiis': MDIIS algorithm
+        REAL(DP) :: gcscf_conv_thr = 1.0E-2_DP
+          ! convergence threshold of GC-SCF (in eV)
 
-        CHARACTER(len=8) :: fcp_relax_allowed(2)
-        DATA fcp_relax_allowed / 'lm', 'mdiis' /
+        REAL(DP) :: gcscf_gk = 0.4_DP
+          ! wavenumber shift for Kerker operator (in 1/bohr)
 
-        REAL(DP) :: fcp_relax_step = 0.5_DP
-          ! step size for steepest descent
+        REAL(DP) :: gcscf_gh = 1.5_DP
+          ! wavenumber shift for Hartree metric (in 1/bohr)
 
-        REAL(DP) :: fcp_relax_crit = 0.001_DP
-          ! threshold for force acting on FCP
-
-        INTEGER :: fcp_mdiis_size = 4
-          ! size of MDIIS algorism
-
-        REAL(DP) :: fcp_mdiis_step = 0.2_DP
-          ! step width of MDIIS algorism
+        REAL(DP) :: gcscf_beta = 0.05_DP
+          ! mixing rate of Fermi energy
 
         INTEGER :: space_group = 0
           ! space group number for coordinates given in crystallographic form
@@ -610,18 +615,21 @@ MODULE input_parameters
           !
 
 
+
         NAMELIST / system / ibrav, celldm, a, b, c, cosab, cosac, cosbc, nat, &
              ntyp, nbnd, ecutwfc, ecutrho, nr1, nr2, nr3, nr1s, nr2s,         &
              nr3s, nr1b, nr2b, nr3b, nosym, nosym_evc, noinv, use_all_frac,   &
              force_symmorphic, starting_charge, starting_magnetization,       &
              occupations, degauss, nspin, ecfixed,                            &
              qcutz, q2sigma, lda_plus_U, lda_plus_u_kind,                     &
-             Hubbard_U, Hubbard_J, Hubbard_alpha,                             &
-             Hubbard_J0, Hubbard_beta,                                        &
+             Hubbard_U, Hubbard_U_back, Hubbard_J, Hubbard_alpha,             &
+             Hubbard_alpha_back, Hubbard_J0, Hubbard_beta,                    &
+             hub_pot_fix, Hubbard_V, Hubbard_parameters,                      &
+             backall, lback, l1back, reserv, reserv_back,                     &
              edir, emaxpos, eopreg, eamp, smearing, starting_ns_eigenvalue,   &
              U_projection_type, input_dft, la2F, assume_isolated,             &
              nqx1, nqx2, nqx3, ecutfock, localization_thr, scdm, ace,         &
-             scdmden, scdmgrd, n_proj,                                        &
+             scdmden, scdmgrd, nscdm, n_proj,                                 &
              exxdiv_treatment, x_gamma_extrapolation, yukawa, ecutvcut,       &
              exx_fraction, screening_parameter, ref_alat,                     &
              noncolin, lspinorb, starting_spin_angle, lambda, angle1, angle2, &
@@ -633,10 +641,12 @@ MODULE input_parameters
              dftd3_version, dftd3_threebody,                                  &
              ts_vdw, ts_vdw_isolated, ts_vdw_econv_thr,                       &
              xdm, xdm_a1, xdm_a2,                                             &
+             mbd_vdw,                                                         &
              step_pen, A_pen, sigma_pen, alpha_pen, no_t_rev,                 &
              esm_bc, esm_efield, esm_w, esm_nfit, esm_debug, esm_debug_gpmax, &
-             esm_a, esm_zb, fcp_mu, fcp_mass, fcp_tempw, fcp_relax,           &
-             fcp_relax_step, fcp_relax_crit, fcp_mdiis_size, fcp_mdiis_step,  &
+             esm_a, esm_zb,                                                   &
+             lgcscf, gcscf_ignore_mun, gcscf_mu, gcscf_conv_thr,              &
+             gcscf_gk, gcscf_gh, gcscf_beta,                                  &
              space_group, uniqueb, origin_choice, rhombohedral,               &
              zgate, relaxz, block, block_1, block_2, block_height
 
@@ -1014,10 +1024,10 @@ MODULE input_parameters
 
         CHARACTER(len=80) :: ion_dynamics = 'none'
           ! set how ions should be moved
-        CHARACTER(len=80) :: ion_dynamics_allowed(9)
+        CHARACTER(len=80) :: ion_dynamics_allowed(10)
         DATA ion_dynamics_allowed / 'none', 'sd', 'cg', 'langevin', &
                                     'damp', 'verlet', 'bfgs', 'beeman',& 
-                                    'langevin-smc' /
+                                    'langevin-smc', 'ipi' /
 
         REAL(DP) :: ion_radius(nsx) = 0.5_DP
           ! pseudo-atomic radius of the i-th atomic species (CP only)
@@ -1160,12 +1170,6 @@ MODULE input_parameters
         REAL(DP)  :: w_1 = 0.5E-1_DP
         REAL(DP)  :: w_2 = 0.5_DP
 
-        LOGICAL :: l_mplathe=.false. !if true apply Muller Plathe strategy
-        INTEGER :: n_muller=0!number of intermediate sub-cells
-        INTEGER :: np_muller=1!period for velocity exchange
-        LOGICAL :: l_exit_muller=.false.!if true do muller exchange after last MD step
-
-        
         !
         NAMELIST / ions / ion_dynamics, iesr, ion_radius, ion_damping,         &
                           ion_positions, ion_velocities, ion_temperature,      &
@@ -1174,8 +1178,7 @@ MODULE input_parameters
                           refold_pos, upscale, delta_t, pot_extrapolation,     &
                           wfc_extrapolation, nraise, remove_rigid_rot,         &
                           trust_radius_max, trust_radius_min,                  &
-                          trust_radius_ini, w_1, w_2, bfgs_ndim,l_mplathe,     &
-                          n_muller,np_muller,l_exit_muller
+                          trust_radius_ini, w_1, w_2, bfgs_ndim
 
 
 !=----------------------------------------------------------------------------=!
@@ -1192,9 +1195,9 @@ MODULE input_parameters
 
         CHARACTER(len=80) :: cell_dynamics  = 'none'
           ! set how the cell should be moved
-        CHARACTER(len=80) :: cell_dynamics_allowed(7)
+        CHARACTER(len=80) :: cell_dynamics_allowed(8)
         DATA cell_dynamics_allowed / 'sd', 'pr', 'none', 'w', 'damp-pr', &
-                                     'damp-w', 'bfgs'  /
+                                     'damp-w', 'bfgs', 'ipi'  /
 
         CHARACTER(len=80) :: cell_velocities = 'default'
           ! cell_velocities = 'zero' | 'default'*
@@ -1330,6 +1333,7 @@ MODULE input_parameters
           REAL(DP) :: exx_ps_rcut_pair
           REAL(DP) :: exx_me_rcut_self
           REAL(DP) :: exx_me_rcut_pair
+          LOGICAL  :: exx_use_cube_domain
 !=======================================================================
 
           INTEGER :: nit
@@ -1350,6 +1354,7 @@ MODULE input_parameters
           NAMELIST / wannier / wf_efield, wf_switch, sw_len, efx0, efy0, efz0,&
                                efx1, efy1, efz1, wfsd, wfdt,exx_neigh,exx_poisson_eps,&
                                exx_dis_cutoff,exx_ps_rcut_self, exx_me_rcut_self,   &
+                               exx_use_cube_domain,                      &
                                exx_ps_rcut_pair, exx_me_rcut_pair, vnbsp,&
                                maxwfdt, wf_q, wf_friction, nit, nsd, nsteps,  & 
                                tolw, adapt, calwf, nwf, wffort, writev
@@ -1380,6 +1385,87 @@ MODULE input_parameters
 
 !  END manual
 ! ----------------------------------------------------------------------
+!
+!=----------------------------------------------------------------------------=!
+!  FCP Namelist Input Parameters
+!=----------------------------------------------------------------------------=!
+!
+        REAL(DP) :: fcp_mu = 0.0_DP
+          ! target Fermi energy (in eV)
+
+        CHARACTER(LEN=16) :: fcp_dynamics = 'none'
+          ! 'none':            Not specified
+          ! 'lm':              Line-Minimization
+          ! 'newton':          Newton-Raphson algorithm (with DIIS)
+          ! 'bfgs':            BFGS algorithm (coupling with ions)
+          ! 'damp':            Damped dynamics (quick-min Verlet)
+          ! 'verlet':          Verlet dynamics
+          ! 'velocity-verlet': Velocity-Verlet dynamics
+
+        CHARACTER(LEN=16) :: fcp_dynamics_allowed(7)
+        DATA fcp_dynamics_allowed / 'none', 'lm', 'newton', 'bfgs', &
+                                    'damp', 'verlet', 'velocity-verlet' /
+
+        REAL(DP) :: fcp_conv_thr = 1.0E-2_DP
+          ! convergence threshold for FCP relaxation (in eV)
+
+        INTEGER :: fcp_ndiis = 4
+          ! size of DIIS for Newton-Raphson algorithm
+
+        REAL(DP) :: fcp_rdiis = 1.0_DP
+          ! step of DIIS for Newton-Raphson algorithm
+
+        REAL(DP) :: fcp_mass = -1.0_DP
+          ! mass for the FCP
+
+        REAL(DP) :: fcp_velocity = 0.0_DP
+          ! initial velocity for the FCP
+
+        CHARACTER(LEN=80) :: fcp_temperature = 'not_controlled'
+          ! fcp_temperature = 'rescaling' | 'rescale-v' | 'rescale-T' | 'reduce-T' |
+          !                   'berendsen' | 'andersen' | 'initial' | 'not_controlled'*
+          !
+          ! 'rescaling'      control FCP's temperature via velocity rescaling
+          !                  see parameters "fcp_tempw" and "fcp_tolp"
+          ! 'rescale-v'      control FCP's temperature via velocity rescaling
+          !                  see parameters "fcp_tempw" and "fcp_nraise"
+          ! 'rescale-T'      control FCP's temperature via velocity rescaling
+          !                  see parameter "fcp_delta_t"
+          ! 'reduce-T'       reduce FCP's temperature
+          !                  see parameters "fcp_nraise", "fcp_delta_t"
+          ! 'berendsen'      control FCP's temperature using "soft" velocity
+          !                  rescaling - see parameters "fcp_tempw" and "fcp_nraise"
+          ! 'andersen'       control FCP's temperature using Andersen thermostat
+          !                  see parameters "fcp_tempw" and "fcp_nraise"
+          ! 'initial'        initialize ion velocities to temperature fcp_tempw
+          !                  and leave uncontrolled further on
+          ! 'not_controlled' FCP's temperature is not controlled
+
+        REAL(DP) :: fcp_tempw = 300.0_DP
+          ! meaningful only with "fcp_temperature /= 'not_controlled' "
+          ! value of the FCP's temperature (in Kelvin) forced
+          ! by the temperature control
+
+        REAL(DP) :: fcp_tolp = 100.0_DP
+          ! parameter to control temperature
+
+        REAL(DP) :: fcp_delta_t = 1.0_DP
+          ! parameter to control temperature
+
+        INTEGER :: fcp_nraise = 1
+          ! parameter to control temperature
+
+        LOGICAL :: freeze_all_atoms = .FALSE.
+          ! freeze (or fix) all atoms.
+          ! to perform relaxation or dynamics only with FCP.
+
+        NAMELIST / fcp / fcp_mu, fcp_dynamics, fcp_conv_thr, fcp_ndiis, fcp_rdiis, &
+                         fcp_mass, fcp_velocity, fcp_temperature, &
+                         fcp_tempw, fcp_tolp, fcp_delta_t, fcp_nraise, &
+                         freeze_all_atoms
+
+!  END manual
+! ----------------------------------------------------------------------
 
 
 ! ----------------------------------------------------------------
@@ -1407,6 +1493,7 @@ MODULE input_parameters
         LOGICAL   :: tksout = .false.
         LOGICAL   :: ttemplate = .false.
         LOGICAL   :: twannier = .false.
+        LOGICAL   :: ttotcharge = .false.
 
 !
 !    ATOMIC_POSITIONS
@@ -1535,6 +1622,7 @@ SUBROUTINE reset_input_checks()
   tksout = .false.
   tionvel = .false.
   tcell = .false.
+  ttotcharge = .false.
   !
   END SUBROUTINE reset_input_checks
   !
@@ -1627,6 +1715,7 @@ SUBROUTINE reset_input_checks()
     IF ( allocated( sp_vel ) ) DEALLOCATE( sp_vel )
     IF ( allocated( rd_for ) ) DEALLOCATE( rd_for )
     !
+    IF ( allocated( f_inp ) ) DEALLOCATE( f_inp )
     !
     IF ( allocated( constr_type_inp ) )   DEALLOCATE( constr_type_inp )
     IF ( allocated( constr_inp ) )        DEALLOCATE( constr_inp )

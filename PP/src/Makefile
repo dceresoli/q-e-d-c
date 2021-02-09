@@ -13,7 +13,6 @@ add_shift_cc.o \
 add_shift_lc.o \
 add_shift_us.o \
 atomic_wfc_nc_proj.o \
-cft.o \
 chdens_module.o \
 chdens_bspline.o \
 compute_ppsi.o \
@@ -36,6 +35,7 @@ paw_postproc.o \
 projections_mod.o \
 projwfc_box.o \
 punch_plot.o \
+read_proj.o \
 smallgk.o \
 stm.o \
 stop_pp.o \
@@ -43,6 +43,8 @@ sum_band_kin.o \
 sym_band.o \
 vasp_read_chgcar_mod.o \
 vasp_xml_module.o \
+wannier_proj.o \
+wannier_enrg.o \
 work_function.o \
 write_p_avg.o \
 write_proj.o \
@@ -51,11 +53,11 @@ write_hamiltonians.o \
 xc_vdW_scale_mod.o   # added by Yang Jiao
 
 PWOBJS = ../../PW/src/libpw.a
-QEOBJS = ../../Modules/libqemod.a ../../KS_Solvers/libks_solvers.a \
+QEMODS = ../../Modules/libqemod.a ../../upflib/libupf.a ../../KS_Solvers/libks_solvers.a \
          ../../FFTXlib/libqefft.a ../../LAXlib/libqela.a ../../UtilXlib/libutil.a \
-         ../../dft-d3/libdftd3qe.a
+         ../../dft-d3/libdftd3qe.a ../../XClib/xc_lib.a
 
-MODULES = $(PWOBJS) $(QEOBJS)
+MODULES = $(PWOBJS) $(QEMODS)
 
 TLDEPS= pwlibs
 
@@ -71,7 +73,7 @@ libpp.a : $(PPOBJS)
 	$(RANLIB) $@
 
 qexml.x: qexml.o qexml_example.o
-	$(LD) $(LDFLAGS) -o $@ qexml_example.o qexml.o $(QEOBJS) $(LIBOBJS)
+	$(LD) $(LDFLAGS) -o $@ qexml_example.o qexml.o $(QEMODS) $(LIBOBJS)
 
 open_grid.x : open_grid.o libpp.a $(MODULES) $(LIBOBJS)
 	$(LD) $(LDFLAGS) -o $@ \

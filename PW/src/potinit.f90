@@ -1,5 +1,5 @@
 !
-! Copyright (C) 2001-2016 Quantum ESPRESSO group
+! Copyright (C) 2001-2020 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
@@ -31,18 +31,18 @@ SUBROUTINE potinit()
   USE klist,                ONLY : nelec
   USE lsda_mod,             ONLY : lsda, nspin
   USE fft_base,             ONLY : dfftp
-  USE fft_interfaces,       ONLY : fwfft
   USE gvect,                ONLY : ngm, gstart, g, gg, ig_l2g
   USE gvecs,                ONLY : doublegrid
   USE control_flags,        ONLY : lscf, gamma_only
   USE scf,                  ONLY : rho, rho_core, rhog_core, &
                                    vltot, v, vrs, kedtau
-  USE funct,                ONLY : dft_is_meta
+  USE xc_lib,               ONLY : xclib_dft_is
   USE ener,                 ONLY : ehart, etxc, vtxc, epaw
   USE ldaU,                 ONLY : lda_plus_u, Hubbard_lmax, eth, &
-                                   niter_with_fixed_ns
+                                   niter_with_fixed_ns, lda_plus_u_kind, &
+                                   nsg, nsgnew
   USE noncollin_module,     ONLY : noncolin, report
-  USE io_files,             ONLY : tmp_dir, prefix, postfix, input_drho, check_file_exist
+  USE io_files,             ONLY : restart_dir, input_drho, check_file_exist
   USE spin_orb,             ONLY : domag, lforcet
   USE mp,                   ONLY : mp_sum
   USE mp_bands ,            ONLY : intra_bgrp_comm, root_bgrp
@@ -56,18 +56,21 @@ SUBROUTINE potinit()
   USE paw_init,             ONLY : PAW_atomic_becsum
   USE paw_onecenter,        ONLY : PAW_potential
   !
+  USE scf_gpum,             ONLY : using_vrs
+  !
   IMPLICIT NONE
   !
-  REAL(DP)              :: charge           ! the starting charge
-  REAL(DP)              :: etotefield       !
-  REAL(DP)              :: fact
-  INTEGER               :: is
-  LOGICAL               :: exst 
-  CHARACTER(LEN=320)    :: filename
+  REAL(DP)                  :: charge           ! the starting charge
+  REAL(DP)                  :: etotefield       !
+  REAL(DP)                  :: fact
+  INTEGER                   :: is
+  LOGICAL                   :: exst 
+  CHARACTER(LEN=320)        :: filename
+  COMPLEX (DP), ALLOCATABLE :: work(:,:)
   !
   CALL start_clock('potinit')
   !
-  filename = TRIM(tmp_dir) // TRIM (prefix) // postfix // 'charge-density'
+  filename = TRIM (restart_dir( )) // 'charge-density'
 #if defined __HDF5
   exst     =  check_file_exist( TRIM(filename) // '.hdf5' )
 #else 
@@ -77,7 +80,7 @@ SUBROUTINE potinit()
   IF ( starting_pot == 'file' .AND. exst ) THEN
      !
      ! ... Cases a) and b): the charge density is read from file
-     ! ... this also reads rho%ns if lda+U, rho%bec if PAW, rho%kin if metaGGA
+     ! ... this also reads rho%ns if DFT+U, rho%bec if PAW, rho%kin if metaGGA
      !
      IF ( .NOT.lforcet ) THEN
         CALL read_scf ( rho, nspin, gamma_only )
@@ -85,6 +88,7 @@ SUBROUTINE potinit()
         !
         ! ... 'force theorem' calculation of MAE: read rho only from previous
         ! ... lsda calculation, set noncolinear magnetization from angles
+        ! ... FIXME: why not calling read_scf also in this case?
         !
         CALL read_rhog ( filename, root_bgrp, intra_bgrp_comm, &
              ig_l2g, nspin, rho%of_g, gamma_only )
@@ -105,6 +109,23 @@ SUBROUTINE potinit()
         !
      END IF
      !
+     IF ( input_drho /= ' ' ) THEN
+        !
+        filename = TRIM( restart_dir( )) // input_drho
+        CALL read_rhog ( filename, root_bgrp, intra_bgrp_comm, &
+             ig_l2g, nspin, v%of_g, gamma_only )
+        ! 
+        WRITE( UNIT = stdout, &
+               FMT = '(/5X,"a scf correction to at. rho is read from",A)' ) &
+            TRIM( filename )
+        !
+        ALLOCATE( work( dfftp%ngm, nspin ) )
+        CALL atomic_rho_g( work, nspin )
+        rho%of_g(:,1) = work(:,1) + v%of_g(:,1)
+        DEALLOCATE(work)
+        !
+     END IF
+     !
   ELSE
      !
      ! ... Case c): the potential is built from a superposition 
@@ -118,13 +139,20 @@ SUBROUTINE potinit()
      !
      CALL atomic_rho_g( rho%of_g, nspin )
 
-     ! ... in the lda+U case set the initial value of ns
+     ! ... in the DFT+U(+V) case set the initial value of ns (or nsg)
+     !
      IF (lda_plus_u) THEN
         !
-        IF (noncolin) THEN
-           CALL init_ns_nc()
-        ELSE
+        IF (lda_plus_u_kind == 0) THEN
            CALL init_ns()
+        ELSEIF (lda_plus_u_kind == 1) THEN
+           IF (noncolin) THEN
+              CALL init_ns_nc()
+           ELSE
+              CALL init_ns()
+           ENDIF
+        ELSEIF (lda_plus_u_kind == 2) THEN
+           CALL init_nsg()
         ENDIF
         !
      ENDIF
@@ -134,10 +162,7 @@ SUBROUTINE potinit()
      !
      IF ( input_drho /= ' ' ) THEN
         !
-        IF ( nspin > 1 ) CALL errore &
-             ( 'potinit', 'spin polarization not allowed in drho', 1 )
-        !
-        filename = TRIM(tmp_dir) // TRIM (prefix) // postfix // input_drho
+        filename = TRIM( restart_dir( )) // input_drho
         CALL read_rhog ( filename, root_bgrp, intra_bgrp_comm, &
              ig_l2g, nspin, v%of_g, gamma_only )
         !
@@ -181,7 +206,7 @@ SUBROUTINE potinit()
   !
   CALL rho_g2r (dfftp, rho%of_g, rho%of_r)
   !
-  IF  ( dft_is_meta() ) THEN
+  IF  ( xclib_dft_is('meta') ) THEN
      IF (starting_pot /= 'file') THEN
         ! ... define a starting (TF) guess for rho%kin_r from rho%of_r
         ! ... to be verified for LSDA: rho is (tot,magn), rho_kin is (up,down)
@@ -214,9 +239,10 @@ SUBROUTINE potinit()
   !
   ! ... define the total local potential (external+scf)
   !
+  CALL using_vrs(1)
   CALL set_vrs( vrs, vltot, v%of_r, kedtau, v%kin_r, dfftp%nnr, nspin, doublegrid )
   !
-  ! ... write on output the parameters used in the lda+U calculation
+  ! ... write on output the parameters used in the DFT+U(+V) calculation
   !
   IF ( lda_plus_u ) THEN
      !
@@ -224,10 +250,17 @@ SUBROUTINE potinit()
          niter_with_fixed_ns
      WRITE( stdout, '(5X,"Starting occupations:")')
      !
-     IF (noncolin) THEN
-       CALL write_ns_nc()
-     ELSE
-       CALL write_ns()
+     IF (lda_plus_u_kind == 0) THEN
+        CALL write_ns()
+     ELSEIF (lda_plus_u_kind == 1) THEN
+        IF (noncolin) THEN
+           CALL write_ns_nc()
+        ELSE
+           CALL write_ns()
+        ENDIF
+     ELSEIF (lda_plus_u_kind == 2) THEN
+        nsgnew = nsg
+        CALL write_nsg()
      ENDIF
      !
   END IF
